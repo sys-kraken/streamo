@@ -16,9 +16,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.painterResource
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.Font
-import androidx.compose.ui.text.font.FontFamily
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.streamo.app.R
@@ -31,7 +29,8 @@ val Coral = Color(0xFFF38177)      // the tentacles and starfish
 val Parchment = Color(0xFFF4E6CF)  // the cream ring and paper
 val Ink = Color(0xFF120D0B)        // warm black background
 
-val Creepster = FontFamily(Font(R.font.creepster))
+/** Soft parchment used for the "Streamo" name and its tagline. */
+val BrandText = Parchment.copy(alpha = 0.7f)
 
 private val colors = darkColorScheme(
     primary = Ember,
@@ -78,12 +77,13 @@ fun BrandTitle(modifier: Modifier = Modifier) {
         Column {
             Text(
                 "Streamo",
-                style = TextStyle(color = Color.White, fontFamily = Creepster, fontSize = 28.sp, lineHeight = 28.sp),
+                style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold, lineHeight = 24.sp),
+                color = BrandText,
             )
             Text(
                 "YouTube premium for pirates",
                 style = MaterialTheme.typography.labelSmall.copy(letterSpacing = 0.6.sp),
-                color = Parchment.copy(alpha = 0.7f),
+                color = BrandText,
             )
         }
     }
