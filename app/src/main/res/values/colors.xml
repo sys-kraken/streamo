@@ -1,0 +1,5 @@
+<resources>
+    <!-- Taken from the Streamo logo: warm black, ember orange, sea-green, parchment. -->
+    <color name="bg">#120D0B</color>
+    <color name="icon_bg">#1A1310</color>
+</resources>
