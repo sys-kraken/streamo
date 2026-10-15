@@ -54,7 +54,7 @@ class Updater(private val client: OkHttpClient) {
             val release = json.decodeFromString<GhRelease>(response.body.string())
             val apk = release.assets.firstOrNull { it.name.endsWith(".apk", ignoreCase = true) }
                 ?: return@withContext null
-            Release(release.tag.removePrefix("v").removePrefix("V"), release.body.orEmpty().trim(), apk.url, apk.size)
+            Release(release.tag.removePrefix("v").removePrefix("V"), plainText(release.body.orEmpty()), apk.url, apk.size)
         }
     }
 
@@ -109,6 +109,16 @@ class Updater(private val client: OkHttpClient) {
             )
             return true
         }
+
+        /** Release notes are written in Markdown on GitHub; show them as plain text with bullets. */
+        fun plainText(markdown: String): String = markdown
+            .replace("\r", "")
+            .replace(Regex("""\*\*(.+?)\*\*"""), "$1")
+            .replace(Regex("""`([^`]*)`"""), "$1")
+            .replace(Regex("""\[([^\]]+)]\([^)]+\)"""), "$1")
+            .replace(Regex("""(?m)^#+\s*"""), "")
+            .replace(Regex("""(?m)^\s*[-*]\s+"""), "• ")
+            .trim()
 
         /** "1.10.0" > "1.9.2"; missing parts count as 0. */
         fun compareVersions(a: String, b: String): Int {
