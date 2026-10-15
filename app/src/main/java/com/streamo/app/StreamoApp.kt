@@ -23,6 +23,7 @@ class StreamoApp : Application(), SingletonImageLoader.Factory {
     override fun onCreate() {
         super.onCreate()
         LibraryStore.init(this)
+        com.streamo.app.download.Downloads.init(this)
         val locale = Locale.getDefault()
         NewPipe.init(
             OkHttpDownloader(http),

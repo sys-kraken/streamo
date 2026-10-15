@@ -129,6 +129,7 @@ class PlaybackService : MediaSessionService() {
      * files; the lookup is usually already cached because the app prefetches on touch.
      */
     private suspend fun resolve(item: MediaItem): MediaItem {
+        item.requestMetadata.mediaUri?.let { local -> return resolveLocal(item, local) }
         val url = item.mediaId
         val maxHeight = item.requestMetadata.extras?.getInt(EXTRA_MAX_HEIGHT)?.takeIf { it > 0 }
             ?: LibraryStore.settings.value.maxHeight
@@ -154,10 +155,20 @@ class PlaybackService : MediaSessionService() {
             .build()
     }
 
+    /** A downloaded file: no lookup needed, just play it. */
+    private fun resolveLocal(item: MediaItem, local: Uri): MediaItem {
+        val videoJson = item.requestMetadata.extras?.getString(EXTRA_VIDEO)
+        val metadata = item.mediaMetadata.buildUpon()
+            .setExtras(Bundle().apply { putString(EXTRA_VIDEO, videoJson) })
+            .build()
+        return item.buildUpon().setUri(local).setMediaMetadata(metadata).setTag(null).build()
+    }
+
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             segments = emptyList()
             val item = mediaItem ?: return
+            PlayQueue.moveTo(item.mediaId)
             item.mediaMetadata.extras?.getString(EXTRA_VIDEO)?.let {
                 runCatching { json.decodeFromString<VideoItem>(it) }.getOrNull()?.let(LibraryStore::addToHistory)
             }
@@ -197,10 +208,14 @@ class PlaybackService : MediaSessionService() {
      * notification, lock screen and pop-up window, and playback continues when a video ends.
      */
     private suspend fun queueUpNext(url: String) {
-        val details = runCatching { YouTubeRepo.details(url, LibraryStore.settings.value.maxHeight) }.getOrNull() ?: return
-        val recent = LibraryStore.history.value.take(50).map { it.url }.toSet()
-        val next = details.related.firstOrNull { it.url !in recent && !it.isLive }
-            ?: details.related.firstOrNull { it.url != url } ?: return
+        // In a playlist, the next video is the playlist's; otherwise YouTube's first suggestion.
+        val next = PlayQueue.nextAfter(url) ?: run {
+            val details = runCatching { YouTubeRepo.details(url, LibraryStore.settings.value.maxHeight) }.getOrNull()
+                ?: return
+            val recent = LibraryStore.history.value.take(50).map { it.url }.toSet()
+            details.related.firstOrNull { it.url !in recent && !it.isLive }
+                ?: details.related.firstOrNull { it.url != url } ?: return
+        }
         val resolved = runCatching { resolve(MediaItem.Builder().setMediaId(next.url).build()) }.getOrNull() ?: return
         if (player.currentMediaItem?.mediaId != url) return // the user switched videos meanwhile
 

@@ -61,7 +61,11 @@ import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.SponsorBlock
 import com.streamo.app.data.VideoItem
 import com.streamo.app.player.PlayerConnection
+import com.streamo.app.download.Downloads
 import com.streamo.app.ui.ChannelScreen
+import com.streamo.app.ui.DownloadsScreen
+import com.streamo.app.ui.LocalPlaylistScreen
+import com.streamo.app.ui.YouTubePlaylistScreen
 import com.streamo.app.ui.HomeScreen
 import com.streamo.app.ui.LibraryScreen
 import com.streamo.app.ui.MiniPlayer
@@ -78,6 +82,7 @@ class MainActivity : ComponentActivity() {
     private var watchExpanded by mutableStateOf(false)
     private var fullscreen by mutableStateOf(false)
     private var inPip by mutableStateOf(false)
+    private var openRequest by mutableStateOf<String?>(null)
 
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
@@ -87,6 +92,8 @@ class MainActivity : ComponentActivity() {
         PlayerConnection.connect(this)
         if (Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         handleShare(intent)
+        openRequest = intent?.getStringExtra(EXTRA_OPEN)
+        Downloads.resumeIfNeeded(this)
 
         setContent {
             StreamoTheme {
@@ -117,8 +124,20 @@ class MainActivity : ComponentActivity() {
             openChannel = { url -> navController.navigate("channel/${Uri.encode(url)}") },
             openSearch = { navController.navigate("search") },
             openSettings = { navController.navigate("settings") },
+            openPlaylist = { id -> navController.navigate("playlist/$id") },
+            openYouTubePlaylist = { url -> navController.navigate("ytplaylist/${Uri.encode(url)}") },
+            openDownloads = { navController.navigate("downloads") },
             back = { navController.popBackStack() },
         )
+
+        // The download notification opens the Downloads page.
+        LaunchedEffect(openRequest) {
+            if (openRequest == "downloads") {
+                watchExpanded = false
+                navController.navigate("downloads") { launchSingleTop = true }
+                openRequest = null
+            }
+        }
 
         BackHandler(enabled = fullscreen || watchExpanded) {
             if (fullscreen) fullscreen = false else watchExpanded = false
@@ -173,6 +192,11 @@ class MainActivity : ComponentActivity() {
             composable("library") { LibraryScreen(nav, pad) }
             composable("search") { SearchScreen(nav, pad) }
             composable("settings") { SettingsScreen(nav, pad) }
+            composable("downloads") { DownloadsScreen(nav, onPlayed = { watchExpanded = true }, pad) }
+            composable("playlist/{id}") { entry -> LocalPlaylistScreen(entry.arguments?.getString("id").orEmpty(), nav, pad) }
+            composable("ytplaylist/{url}") { entry ->
+                YouTubePlaylistScreen(Uri.decode(entry.arguments?.getString("url").orEmpty()), nav, pad)
+            }
             composable("channel/{url}", arguments = listOf(navArgument("url") { type = NavType.StringType })) { entry ->
                 ChannelScreen(Uri.decode(entry.arguments?.getString("url").orEmpty()), nav, pad)
             }
@@ -193,10 +217,14 @@ class MainActivity : ComponentActivity() {
                     selected = selected,
                     onClick = {
                         watchExpanded = false
-                        navController.navigate(dest) {
-                            popUpTo("home") { saveState = true }
-                            launchSingleTop = true
-                            restoreState = true
+                        // A tab always opens its own main screen, closing Settings, Search, a channel, etc.
+                        if (dest == "home") {
+                            navController.popBackStack("home", inclusive = false)
+                        } else {
+                            navController.navigate(dest) {
+                                popUpTo("home")
+                                launchSingleTop = true
+                            }
                         }
                     },
                     icon = { Icon(if (selected) icons.first else icons.second, label) },
@@ -263,6 +291,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShare(intent)
+        intent.getStringExtra(EXTRA_OPEN)?.let { openRequest = it }
     }
 
     private fun handleShare(intent: Intent?) {
@@ -270,5 +299,10 @@ class MainActivity : ComponentActivity() {
         val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
         val id = SponsorBlock.videoId(text) ?: return
         play(VideoItem("https://www.youtube.com/watch?v=$id", "Loading…", "", null, null, 0, -1, null))
+    }
+
+    companion object {
+        /** Which page to open, e.g. "downloads" from the download notification. */
+        const val EXTRA_OPEN = "open"
     }
 }

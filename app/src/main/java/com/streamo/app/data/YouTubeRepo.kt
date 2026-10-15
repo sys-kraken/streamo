@@ -20,6 +20,8 @@ import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
 import org.schabi.newpipe.extractor.feed.FeedInfo
 import org.schabi.newpipe.extractor.kiosk.KioskInfo
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo
+import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.search.SearchInfo
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeSearchQueryHandlerFactory
 import org.schabi.newpipe.extractor.stream.AudioStream
@@ -190,6 +192,7 @@ object YouTubeRepo {
     private fun InfoItem.toSearchResult(): SearchResult? = when (this) {
         is StreamInfoItem -> if (isShortFormContent) null else SearchResult.Video(toVideoItem())
         is ChannelInfoItem -> SearchResult.Channel(ChannelRef(url, name, thumbnails.pick(88)), subscriberCount)
+        is PlaylistInfoItem -> SearchResult.Playlist(PlaylistRef(url, name, uploaderName.orEmpty(), streamCount, thumbnails.pick(180)))
         else -> null
     }
 
@@ -234,12 +237,75 @@ object YouTubeRepo {
                 runCatching {
                     FeedInfo.getInfo(yt, ch.url).relatedItems
                         .filterIsInstance<StreamInfoItem>()
-                        .map { it.toVideoItem().copy(channelName = ch.name, channelUrl = ch.url) }
+                        .map { it.toVideoItem().copy(channelName = ch.name, channelUrl = ch.url, channelAvatar = ch.avatar) }
                 }.getOrDefault(emptyList())
             }
         }.awaitAll().flatten()
             .distinctBy { it.url }
             .sortedByDescending { it.uploadedEpochMs ?: 0L }
+    }
+
+    // ---------- Downloads ----------
+
+    /** A choice offered in the Download sheet; [sizeBytes] is 0 when YouTube doesn't say. */
+    data class DownloadOption(val audioOnly: Boolean, val height: Int, val sizeBytes: Long)
+
+    /** H.264 MP4 picture files (the kind phones and the MP4 joiner handle everywhere). */
+    private fun downloadableVideo(info: StreamInfo) = playableVideo(info).filter {
+        it.format == MediaFormat.MPEG_4 && (it.codec ?: it.itagItem?.codec ?: "").startsWith("avc")
+    }
+
+    private fun downloadableAudio(info: StreamInfo) =
+        rankAudio(playableAudio(info).filter { it.format == MediaFormat.M4A })
+
+    private fun sizeOf(stream: org.schabi.newpipe.extractor.stream.Stream?): Long = when (stream) {
+        is VideoStream -> stream.itagItem?.contentLength ?: 0
+        is AudioStream -> stream.itagItem?.contentLength ?: 0
+        else -> 0
+    }.coerceAtLeast(0)
+
+    suspend fun downloadOptions(url: String): List<DownloadOption> {
+        val info = infoFor(url).await()
+        val audio = downloadableAudio(info).firstOrNull() ?: return emptyList()
+        val audioSize = sizeOf(audio)
+        val videos = downloadableVideo(info)
+            .groupBy { it.height }
+            .map { (h, list) -> list.maxBy { it.fps } to h }
+            .sortedByDescending { it.second }
+            .map { (v, h) -> DownloadOption(false, h, sizeOf(v).let { if (it > 0) it + audioSize else 0 }) }
+        return videos + DownloadOption(true, 0, audioSize)
+    }
+
+    /** Picture (null for audio-only) and sound links to download, picked fresh. */
+    suspend fun downloadSources(url: String, audioOnly: Boolean, height: Int): Pair<VideoStream?, AudioStream> {
+        invalidate(url) // links expire; a download may start much later than the video was opened
+        val info = infoFor(url).await()
+        val audio = downloadableAudio(info).firstOrNull() ?: throw IllegalStateException("No downloadable sound")
+        if (audioOnly) return null to audio
+        val video = downloadableVideo(info).filter { it.height <= height }.maxWithOrNull(compareBy({ it.height }, { it.fps }))
+            ?: downloadableVideo(info).minByOrNull { it.height }
+            ?: throw IllegalStateException("No downloadable video")
+        return video to audio
+    }
+
+    // ---------- YouTube playlists ----------
+
+    suspend fun playlist(url: String): PlaylistPage = io {
+        val info = PlaylistInfo.getInfo(yt, url)
+        val videos = info.relatedItems.map { it.toVideoItem() }
+        PlaylistPage(
+            name = info.name,
+            uploader = info.uploaderName.orEmpty(),
+            thumbnail = info.thumbnails.pick(360) ?: videos.firstOrNull()?.thumbnail,
+            count = info.streamCount,
+            videos = videos,
+            next = info.nextPage,
+        )
+    }
+
+    suspend fun playlistMore(url: String, next: Any): Pair<List<VideoItem>, Any?> = io {
+        val page = PlaylistInfo.getMoreItems(yt, url, next as Page)
+        page.items.map { it.toVideoItem() } to page.nextPage
     }
 
     // ---------- Channels ----------
@@ -276,7 +342,8 @@ object YouTubeRepo {
         uploaded = textualUploadDate,
         uploadedEpochMs = runCatching { uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli() }.getOrNull(),
         isLive = streamType == StreamType.LIVE_STREAM,
-    )
+        channelAvatar = uploaderAvatars.pick(68),
+    ).also { ChannelAvatars.remember(it.channelUrl, it.channelAvatar) }
 
     private fun StreamInfo.toVideoItem(): VideoItem {
         val epoch = runCatching { uploadDate?.offsetDateTime()?.toInstant()?.toEpochMilli() }.getOrNull()
@@ -292,7 +359,8 @@ object YouTubeRepo {
             uploaded = epoch?.let(::timeAgo) ?: textualUploadDate,
             uploadedEpochMs = epoch,
             isLive = streamType == StreamType.LIVE_STREAM,
-        )
+            channelAvatar = uploaderAvatars.pick(68),
+        ).also { ChannelAvatars.remember(it.channelUrl, it.channelAvatar) }
     }
 
     private fun timeAgo(epochMs: Long): String {

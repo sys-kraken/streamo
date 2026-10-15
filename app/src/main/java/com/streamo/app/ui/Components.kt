@@ -22,6 +22,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -34,6 +36,7 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
+import com.streamo.app.data.ChannelAvatars
 import com.streamo.app.data.VideoItem
 import com.streamo.app.data.YouTubeRepo
 
@@ -57,15 +60,8 @@ fun VideoCard(video: VideoItem, onClick: () -> Unit, onChannel: (() -> Unit)? = 
     ) {
         Thumbnail(video, Modifier.fillMaxWidth())
         Row(Modifier.padding(horizontal = 12.dp, vertical = 10.dp)) {
-            Box(
-                Modifier
-                    .size(36.dp)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.surfaceVariant)
-                    .clickable(enabled = onChannel != null) { onChannel?.invoke() },
-                contentAlignment = Alignment.Center,
-            ) {
-                Text(video.channelName.take(1).uppercase(), fontWeight = FontWeight.Bold)
+            Box(Modifier.clip(CircleShape).clickable(enabled = onChannel != null) { onChannel?.invoke() }) {
+                ChannelAvatar(video, 36.dp)
             }
             Spacer(Modifier.width(12.dp))
             Column(Modifier.weight(1f)) {
@@ -135,6 +131,16 @@ fun Thumbnail(video: VideoItem, modifier: Modifier = Modifier, corner: Dp = 0.dp
             )
         }
     }
+}
+
+/** The uploader's picture; looked up once per channel if the list didn't include it. */
+@Composable
+fun ChannelAvatar(video: VideoItem, size: Dp) {
+    val url by produceState(video.channelAvatar ?: ChannelAvatars.peek(video.channelUrl), video.channelUrl) {
+        val channel = video.channelUrl
+        if (value == null && channel != null) value = ChannelAvatars.get(channel)
+    }
+    Avatar(url, video.channelName, size)
 }
 
 @Composable

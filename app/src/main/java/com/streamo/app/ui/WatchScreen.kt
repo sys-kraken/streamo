@@ -26,10 +26,13 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsBottomHeight
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.automirrored.filled.PlaylistAdd
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.HighQuality
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -74,6 +77,7 @@ import androidx.media3.ui.PlayerView
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.YouTubeRepo
 import com.streamo.app.player.NowPlaying
+import com.streamo.app.player.PlayQueue
 import com.streamo.app.player.PlayerConnection
 import kotlinx.coroutines.delay
 
@@ -166,6 +170,7 @@ fun WatchScreen(
     val subs by LibraryStore.subscriptions.collectAsState()
     val url = now.video.url
     val details = rememberLoad(url) { YouTubeRepo.details(url, settings.maxHeight) }
+    val queue by PlayQueue.queue.collectAsState()
     // Look up the first few "up next" videos ahead of time so tapping one starts quickly.
     LaunchedEffect(details.state) {
         (details.state as? Load.Done)?.value?.related?.take(3)?.forEach { YouTubeRepo.prefetch(it.url) }
@@ -225,6 +230,25 @@ fun WatchScreen(
             item { ChannelRow(now, details, subs.map { it.url }.toSet(), nav, onCollapse) }
             item { ActionRow(now, details, onPip) }
             item { HorizontalDivider(Modifier.padding(top = 4.dp)) }
+            // Playing a playlist: show it first, with the current video marked.
+            val q = queue
+            if (q != null && q.videos.any { it.url == now.video.url }) {
+                item {
+                    Text(
+                        "${q.title} · ${q.index + 1} / ${q.videos.size}",
+                        Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
+                        style = MaterialTheme.typography.titleSmall,
+                    )
+                }
+                itemsIndexed(q.videos, key = { i, v -> "q$i" + v.url }) { i, v ->
+                    Box(Modifier.background(if (i == q.index) MaterialTheme.colorScheme.surfaceContainerHigh else Color.Transparent)) {
+                        VideoRow(v) { PlayerConnection.play(v, fromQueue = true) }
+                    }
+                }
+                item {
+                    Text("More videos", Modifier.padding(horizontal = 16.dp, vertical = 10.dp), style = MaterialTheme.typography.titleSmall)
+                }
+            }
             when (val s = details.state) {
                 Load.Loading -> item { Loading() }
                 is Load.Failed -> item { ErrorMessage(s.message, details.reload) }
@@ -275,6 +299,11 @@ private fun ChannelRow(
 @Composable
 private fun ActionRow(now: NowPlaying, details: Loader<com.streamo.app.data.VideoDetails>, onPip: () -> Unit) {
     val context = LocalContext.current
+    var saving by remember { mutableStateOf(false) }
+    var downloading by remember { mutableStateOf(false) }
+    val video = (details.state as? Load.Done)?.value?.item ?: now.video
+    if (saving) SaveToPlaylistSheet(video) { saving = false }
+    if (downloading) DownloadSheet(video) { downloading = false }
     val likes = (details.state as? Load.Done)?.value?.likes ?: -1
     Row(
         Modifier
@@ -291,6 +320,8 @@ private fun ActionRow(now: NowPlaying, details: Loader<com.streamo.app.data.Vide
                 .putExtra(Intent.EXTRA_TEXT, "${now.video.title}\n${now.video.url}")
             context.startActivity(Intent.createChooser(send, "Share video"))
         }
+        Pill(Icons.AutoMirrored.Filled.PlaylistAdd, "Save") { saving = true }
+        Pill(Icons.Default.Download, "Download") { downloading = true }
         Pill(Icons.Default.PictureInPictureAlt, "Pop-up", onPip)
     }
 }

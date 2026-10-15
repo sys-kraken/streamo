@@ -25,6 +25,7 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.DownloadForOffline
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.NorthWest
 import androidx.compose.material.icons.filled.Search
@@ -84,6 +85,9 @@ class Nav(
     val openChannel: (url: String) -> Unit,
     val openSearch: () -> Unit,
     val openSettings: () -> Unit,
+    val openPlaylist: (id: String) -> Unit,
+    val openYouTubePlaylist: (url: String) -> Unit,
+    val openDownloads: () -> Unit,
     val back: () -> Unit,
 )
 
@@ -334,6 +338,7 @@ fun SearchScreen(nav: Nav, contentPadding: PaddingValues) {
                         when (val r = results[i]) {
                             is SearchResult.Video -> VideoRow(r.video) { nav.openVideo(r.video) }
                             is SearchResult.Channel -> ChannelResult(r) { nav.openChannel(r.channel.url) }
+                            is SearchResult.Playlist -> YouTubePlaylistResult(r.playlist) { nav.openYouTubePlaylist(r.playlist.url) }
                         }
                     }
                     if (loadingMore) item { Loading() }
@@ -418,6 +423,12 @@ fun SubscribeButton(subscribed: Boolean, onClick: () -> Unit) {
 fun LibraryScreen(nav: Nav, contentPadding: PaddingValues) {
     val history by LibraryStore.history.collectAsState()
     val subs by LibraryStore.subscriptions.collectAsState()
+    val playlists by LibraryStore.playlists.collectAsState()
+    val downloads by com.streamo.app.download.Downloads.entries.collectAsState()
+    var creating by remember { mutableStateOf(false) }
+    if (creating) NameDialog("New playlist", "", "Create", onDismiss = { creating = false }) {
+        nav.openPlaylist(LibraryStore.createPlaylist(it)); creating = false
+    }
 
     LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
         item {
@@ -426,6 +437,37 @@ fun LibraryScreen(nav: Nav, contentPadding: PaddingValues) {
                 IconButton(onClick = nav.openSettings) { Icon(Icons.Default.Settings, "Settings") }
             }
         }
+        item {
+            val active = downloads.count { it.status == com.streamo.app.download.DownloadEntry.Status.RUNNING || it.status == com.streamo.app.download.DownloadEntry.Status.QUEUED }
+            Row(
+                Modifier.fillMaxWidth().clickable(onClick = nav.openDownloads).padding(horizontal = 16.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Icon(Icons.Default.DownloadForOffline, null, tint = Ember)
+                Spacer(Modifier.width(16.dp))
+                Column(Modifier.weight(1f)) {
+                    Text("Downloads", style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        if (active > 0) "$active downloading…" else "${downloads.count { it.status == com.streamo.app.download.DownloadEntry.Status.DONE }} saved on this phone",
+                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            }
+        }
+        item {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                SectionTitle("Playlists", Modifier.weight(1f))
+                TextButton(onClick = { creating = true }) { Text("New") }
+            }
+        }
+        if (playlists.isEmpty()) item {
+            Text(
+                "Make one with New, or tap Save while watching a video.",
+                Modifier.padding(horizontal = 16.dp, vertical = 4.dp), color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+        items(playlists, key = { "p" + it.id }) { p -> LocalPlaylistRow(p) { nav.openPlaylist(p.id) } }
         if (subs.isNotEmpty()) {
             item { SectionTitle("Subscriptions (${subs.size})") }
             item {

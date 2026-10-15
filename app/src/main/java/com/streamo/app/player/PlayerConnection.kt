@@ -58,7 +58,9 @@ object PlayerConnection {
         }, MoreExecutors.directExecutor())
     }
 
-    fun play(video: VideoItem) {
+    /** Plays one video. Unless [fromQueue], any playlist in progress ends. */
+    fun play(video: VideoItem, fromQueue: Boolean = false) {
+        if (!fromQueue) PlayQueue.clear() else PlayQueue.moveTo(video.url)
         YouTubeRepo.prefetch(video.url)
         _nowPlaying.value = NowPlaying(video)
         withController {
@@ -67,6 +69,34 @@ object PlayerConnection {
             prepare()
             play()
         }
+    }
+
+    /** Plays a downloaded file (works offline). */
+    fun playLocal(video: VideoItem, fileUri: String) {
+        PlayQueue.clear()
+        _nowPlaying.value = NowPlaying(video)
+        withController {
+            stop()
+            setMediaItem(
+                requestItem(video, maxHeight = 0).buildUpon()
+                    .setRequestMetadata(
+                        MediaItem.RequestMetadata.Builder()
+                            .setMediaUri(Uri.parse(fileUri))
+                            .setExtras(Bundle().apply { putString(PlaybackService.EXTRA_VIDEO, json.encodeToString(VideoItem.serializer(), video)) })
+                            .build()
+                    ).build()
+            )
+            prepare()
+            play()
+        }
+    }
+
+    /** Plays a playlist from [index]; Next and autoplay then follow the playlist. */
+    fun playQueue(title: String, videos: List<VideoItem>, index: Int = 0) {
+        if (videos.isEmpty()) return
+        PlayQueue.start(title, videos, index)
+        play(videos[index.coerceIn(0, videos.lastIndex)], fromQueue = true)
+        videos.getOrNull(index + 1)?.let { YouTubeRepo.prefetch(it.url) }
     }
 
     /** Switch quality, continuing from the same spot. */

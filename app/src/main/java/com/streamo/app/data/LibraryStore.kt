@@ -32,6 +32,9 @@ object LibraryStore {
     private val _history = MutableStateFlow<List<VideoItem>>(emptyList())
     val history: StateFlow<List<VideoItem>> = _history.asStateFlow()
 
+    private val _playlists = MutableStateFlow<List<LocalPlaylist>>(emptyList())
+    val playlists: StateFlow<List<LocalPlaylist>> = _playlists.asStateFlow()
+
     private val _settings = MutableStateFlow(Settings())
     val settings: StateFlow<Settings> = _settings.asStateFlow()
 
@@ -40,6 +43,7 @@ object LibraryStore {
         _subscriptions.value = read("subscriptions") ?: emptyList()
         _history.value = read("history") ?: emptyList()
         _settings.value = read("settings") ?: Settings()
+        _playlists.value = read("playlists") ?: emptyList()
     }
 
     fun isSubscribed(url: String) = _subscriptions.value.any { it.url == url }
@@ -60,6 +64,36 @@ object LibraryStore {
     fun clearHistory() {
         _history.value = emptyList()
         write("history", _history.value)
+    }
+
+    // ---------- Playlists ----------
+
+    fun createPlaylist(name: String, videos: List<VideoItem> = emptyList()): String {
+        val id = java.util.UUID.randomUUID().toString()
+        editPlaylists { it + LocalPlaylist(id, name.trim().ifEmpty { "My playlist" }, videos.distinctBy { v -> v.url }) }
+        return id
+    }
+
+    fun renamePlaylist(id: String, name: String) =
+        editPlaylists { list -> list.map { if (it.id == id) it.copy(name = name.trim().ifEmpty { it.name }) else it } }
+
+    fun deletePlaylist(id: String) = editPlaylists { list -> list.filterNot { it.id == id } }
+
+    fun toggleInPlaylist(id: String, video: VideoItem) = editPlaylists { list ->
+        list.map { p ->
+            if (p.id != id) p
+            else if (p.videos.any { it.url == video.url }) p.copy(videos = p.videos.filterNot { it.url == video.url })
+            else p.copy(videos = p.videos + video)
+        }
+    }
+
+    fun removeFromPlaylist(id: String, url: String) = editPlaylists { list ->
+        list.map { p -> if (p.id == id) p.copy(videos = p.videos.filterNot { it.url == url }) else p }
+    }
+
+    private fun editPlaylists(change: (List<LocalPlaylist>) -> List<LocalPlaylist>) {
+        _playlists.update(change)
+        write("playlists", _playlists.value)
     }
 
     fun updateSettings(change: (Settings) -> Settings) {

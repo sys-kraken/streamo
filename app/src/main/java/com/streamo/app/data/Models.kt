@@ -14,6 +14,7 @@ data class VideoItem(
     val uploaded: String?,
     val uploadedEpochMs: Long? = null,
     val isLive: Boolean = false,
+    val channelAvatar: String? = null,
 )
 
 @Serializable
@@ -60,4 +61,31 @@ data class SearchPage(
 sealed interface SearchResult {
     data class Video(val video: VideoItem) : SearchResult
     data class Channel(val channel: ChannelRef, val subscribers: Long) : SearchResult
+    data class Playlist(val playlist: PlaylistRef) : SearchResult
 }
+
+/** A playlist made in Streamo, saved on the phone. */
+@Serializable
+data class LocalPlaylist(
+    val id: String,
+    val name: String,
+    val videos: List<VideoItem> = emptyList(),
+)
+
+/** A YouTube playlist as shown in search results. */
+data class PlaylistRef(
+    val url: String,
+    val name: String,
+    val uploader: String,
+    val count: Long,
+    val thumbnail: String?,
+)
+
+data class PlaylistPage(
+    val name: String,
+    val uploader: String,
+    val thumbnail: String?,
+    val count: Long,
+    val videos: List<VideoItem>,
+    val next: Any?,
+)
