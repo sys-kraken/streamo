@@ -8,6 +8,7 @@ import coil3.disk.DiskCache
 import coil3.disk.directory
 import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
+import coil3.request.crossfade
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.OkHttpDownloader
 import com.streamo.app.data.SponsorBlock
@@ -39,6 +40,7 @@ class StreamoApp : Application(), SingletonImageLoader.Factory {
         ImageLoader.Builder(context)
             .components { add(OkHttpNetworkFetcherFactory(callFactory = { http })) }
             .memoryCache { MemoryCache.Builder().maxSizePercent(context, 0.25).build() }
+            .crossfade(180)
             .diskCache {
                 DiskCache.Builder()
                     .directory(cacheDir.resolve("thumbnails"))

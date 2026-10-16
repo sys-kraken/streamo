@@ -121,7 +121,14 @@ fun HomeScreen(nav: Nav, contentPadding: PaddingValues) {
 
     // Load every tab in the background right away, so switching tabs is instant.
     val loader = rememberLoad(selected to subs.size, cached = Feeds.peek(homeKey(selected, subs))) { refresh ->
-        homeFeed(selected, subs, history, refresh).await()
+        try {
+            homeFeed(selected, subs, history, refresh).await()
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            delay(800) // a brief network hiccup often clears up by itself
+            homeFeed(selected, subs, history, refresh = true).await()
+        }
     }
     // Once the tab on screen has loaded, quietly load the others so switching is instant.
     LaunchedEffect(tabs, subs.size, loader.state is Load.Done) {

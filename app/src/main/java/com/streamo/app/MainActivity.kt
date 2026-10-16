@@ -15,8 +15,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
@@ -162,8 +164,8 @@ class MainActivity : ComponentActivity() {
             val current = now
             AnimatedVisibility(
                 visible = current != null && watchExpanded,
-                enter = slideInVertically { it },
-                exit = slideOutVertically { it },
+                enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200)),
+                exit = slideOutVertically(tween(220, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(180)),
             ) {
                 if (current != null) {
                     WatchScreen(
@@ -186,10 +188,11 @@ class MainActivity : ComponentActivity() {
         NavHost(
             navController,
             startDestination = "home",
-            enterTransition = { EnterTransition.None },
-            exitTransition = { ExitTransition.None },
-            popEnterTransition = { EnterTransition.None },
-            popExitTransition = { ExitTransition.None },
+            // A very short fade: smooth, but not slow like the default 0.7 s.
+            enterTransition = { fadeIn(tween(150)) },
+            exitTransition = { fadeOut(tween(120)) },
+            popEnterTransition = { fadeIn(tween(150)) },
+            popExitTransition = { fadeOut(tween(120)) },
         ) {
             composable("home") { HomeScreen(nav, pad) }
             composable("subs") { SubscriptionsScreen(nav, pad) }

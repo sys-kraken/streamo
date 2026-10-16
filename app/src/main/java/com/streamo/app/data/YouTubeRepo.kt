@@ -20,6 +20,7 @@ import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
 import org.schabi.newpipe.extractor.feed.FeedInfo
 import org.schabi.newpipe.extractor.kiosk.KioskInfo
+import org.schabi.newpipe.extractor.localization.ContentCountry
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem
 import org.schabi.newpipe.extractor.search.SearchInfo
@@ -226,8 +227,16 @@ object YouTubeRepo {
     }
 
     suspend fun explore(kioskId: String): List<VideoItem> = io {
-        val url = yt.kioskList.getListLinkHandlerFactoryByType(kioskId).fromId(kioskId).url
-        KioskInfo.getInfo(yt, url).relatedItems.map { it.toVideoItem() }
+        // Some charts don't exist everywhere (e.g. YouTube has no Music chart for the
+        // Philippines). Then show the US chart rather than an error.
+        runCatching { kiosk(kioskId, null) }.getOrElse { kiosk(kioskId, ContentCountry("US")) }
+    }
+
+    private fun kiosk(kioskId: String, country: ContentCountry?): List<VideoItem> {
+        val extractor = yt.kioskList.getExtractorById(kioskId, null)
+        country?.let(extractor::forceContentCountry)
+        extractor.fetchPage()
+        return KioskInfo.getInfo(extractor).relatedItems.map { it.toVideoItem() }
     }
 
     /** Latest uploads from all subscribed channels, newest first. Uses YouTube's lightweight feeds. */

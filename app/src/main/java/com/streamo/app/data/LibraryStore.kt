@@ -104,7 +104,10 @@ object LibraryStore {
     private inline fun <reified T> read(key: String): T? =
         prefs.getString(key, null)?.let { runCatching { json.decodeFromString<T>(it) }.getOrNull() }
 
+    /** One background thread does all saving, in order, so the screen never waits on it. */
+    private val saver = java.util.concurrent.Executors.newSingleThreadExecutor()
+
     private inline fun <reified T> write(key: String, value: T) {
-        prefs.edit().putString(key, json.encodeToString(value)).apply()
+        saver.execute { prefs.edit().putString(key, json.encodeToString(value)).apply() }
     }
 }
