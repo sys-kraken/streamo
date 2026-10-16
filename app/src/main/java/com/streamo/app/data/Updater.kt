@@ -87,7 +87,7 @@ class Updater(private val client: OkHttpClient) {
         }
 
     companion object {
-        const val REPO = "syskraken/streamo"
+        const val REPO = "sys-kraken/streamo"
 
         /**
          * Opens Android's installer for the downloaded APK. Returns false (after opening the

@@ -45,7 +45,7 @@ and history) on every phone before installing a new version. Never share it publ
 ## Publishing an update (so phones can update from Settings)
 
 Streamo's **Settings → Check for updates** looks at the newest release on
-<https://github.com/syskraken/streamo/releases>, downloads its APK and opens Android's installer.
+<https://github.com/sys-kraken/streamo/releases>, downloads its APK and opens Android's installer.
 
 1. In `app/build.gradle.kts`, raise `versionCode` by 1 and set `versionName` (e.g. `1.1.0`).
 2. Build: `./gradlew :app:assembleRelease`
