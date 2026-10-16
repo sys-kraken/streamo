@@ -4,7 +4,9 @@ import androidx.annotation.OptIn
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.util.UnstableApi
+import android.content.Context
 import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.exoplayer.drm.DrmSessionManagerProvider
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
@@ -20,10 +22,12 @@ import com.streamo.app.data.StreamChoice
  * the screen is off and only download sound.
  */
 @OptIn(UnstableApi::class)
-class StreamSourceFactory(private val dataSource: DataSource.Factory) : MediaSource.Factory {
+class StreamSourceFactory(context: Context, private val dataSource: DataSource.Factory) : MediaSource.Factory {
     private val progressive = ProgressiveMediaSource.Factory(dataSource)
     private val hls = HlsMediaSource.Factory(dataSource)
-    private val fallback = DefaultMediaSourceFactory(dataSource)
+    // Anything else (downloaded files: content:// and file:// addresses) needs a reader that
+    // understands the phone's own storage, not just the internet.
+    private val fallback = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, dataSource))
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val streams = mediaItem.localConfiguration?.tag as? StreamChoice

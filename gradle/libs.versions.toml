@@ -13,10 +13,12 @@ coil = "3.5.0"
 newpipe-extractor = "v0.26.5"
 desugar = "2.1.5"
 core = "1.19.0"
+profileinstaller = "1.4.1"
 junit = "4.13.2"
 
 [libraries]
 androidx-core = { module = "androidx.core:core-ktx", version.ref = "core" }
+androidx-profileinstaller = { module = "androidx.profileinstaller:profileinstaller", version.ref = "profileinstaller" }
 androidx-activity-compose = { module = "androidx.activity:activity-compose", version.ref = "activity" }
 androidx-lifecycle-viewmodel-compose = { module = "androidx.lifecycle:lifecycle-viewmodel-compose", version.ref = "lifecycle" }
 androidx-lifecycle-runtime-compose = { module = "androidx.lifecycle:lifecycle-runtime-compose", version.ref = "lifecycle" }

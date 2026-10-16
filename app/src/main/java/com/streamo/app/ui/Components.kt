@@ -40,11 +40,23 @@ import com.streamo.app.data.ChannelAvatars
 import com.streamo.app.data.VideoItem
 import com.streamo.app.data.YouTubeRepo
 
-/** Starts loading a video the moment a finger touches it, before the tap completes. */
+/**
+ * Starts looking a video up as soon as a finger rests on it, a moment before the tap completes.
+ * A finger that moves (scrolling past) doesn't count, so scrolling never triggers lookups.
+ */
 fun Modifier.prefetchOnTouch(url: String): Modifier = pointerInput(url) {
     awaitEachGesture {
-        awaitFirstDown(requireUnconsumed = false)
-        YouTubeRepo.prefetch(url)
+        val down = awaitFirstDown(requireUnconsumed = false)
+        val outcome = withTimeoutOrNull(90) {
+            while (true) {
+                val change = awaitPointerEvent().changes.firstOrNull { it.id == down.id } ?: return@withTimeoutOrNull false
+                if (!change.pressed) return@withTimeoutOrNull true // quick tap
+                if ((change.position - down.position).getDistance() > viewConfiguration.touchSlop) return@withTimeoutOrNull false
+            }
+            @Suppress("UNREACHABLE_CODE") false
+        }
+        // null = still resting on it after 90 ms; true = tapped; false = scrolled away.
+        if (outcome != false) YouTubeRepo.prefetch(url)
     }
 }
 

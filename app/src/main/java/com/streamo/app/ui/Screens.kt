@@ -117,9 +117,12 @@ fun HomeScreen(nav: Nav, contentPadding: PaddingValues) {
     if (selected !in tabs) selected = tabs.firstOrNull() ?: ""
 
     // Load every tab in the background right away, so switching tabs is instant.
-    LaunchedEffect(tabs, subs.size) { tabs.forEach { homeFeed(it, subs, history) } }
     val loader = rememberLoad(selected to subs.size, cached = Feeds.peek(homeKey(selected, subs))) { refresh ->
         homeFeed(selected, subs, history, refresh).await()
+    }
+    // Once the tab on screen has loaded, quietly load the others so switching is instant.
+    LaunchedEffect(tabs, subs.size, loader.state is Load.Done) {
+        if (loader.state is Load.Done) tabs.forEach { homeFeed(it, subs, history) }
     }
 
     Column(Modifier.fillMaxSize()) {

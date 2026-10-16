@@ -11,6 +11,8 @@ import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.OkHttpDownloader
 import com.streamo.app.data.SponsorBlock
+import okhttp3.ConnectionPool
+import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
 import org.schabi.newpipe.extractor.NewPipe
 import org.schabi.newpipe.extractor.localization.ContentCountry
@@ -51,6 +53,10 @@ class StreamoApp : Application(), SingletonImageLoader.Factory {
             OkHttpClient.Builder()
                 .connectTimeout(15, TimeUnit.SECONDS)
                 .readTimeout(30, TimeUnit.SECONDS)
+                // OkHttp allows only 5 parallel requests per site by default, which made
+                // thumbnails and channel pictures trickle in while scrolling.
+                .dispatcher(Dispatcher().apply { maxRequests = 64; maxRequestsPerHost = 16 })
+                .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))
                 .build()
         }
         val sponsorBlock by lazy { SponsorBlock(http) }

@@ -34,6 +34,9 @@ data class NowPlaying(
 object PlayerConnection {
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
     private var controller: MediaController? = null
+
+    /** Set by [close]: the player's last update about the old video must not reopen the mini player. */
+    private var closed = false
     private var pending: (MediaController.() -> Unit)? = null
 
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
@@ -60,6 +63,7 @@ object PlayerConnection {
 
     /** Plays one video. Unless [fromQueue], any playlist in progress ends. */
     fun play(video: VideoItem, fromQueue: Boolean = false) {
+        closed = false
         if (!fromQueue) PlayQueue.clear() else PlayQueue.moveTo(video.url)
         YouTubeRepo.prefetch(video.url)
         _nowPlaying.value = NowPlaying(video)
@@ -73,6 +77,7 @@ object PlayerConnection {
 
     /** Plays a downloaded file (works offline). */
     fun playLocal(video: VideoItem, fileUri: String) {
+        closed = false
         PlayQueue.clear()
         _nowPlaying.value = NowPlaying(video)
         withController {
@@ -115,6 +120,8 @@ object PlayerConnection {
     fun togglePlay() = withController { if (isPlaying) pause() else play() }
 
     fun close() {
+        closed = true
+        PlayQueue.clear()
         _nowPlaying.value = null
         withController {
             stop()
@@ -160,6 +167,7 @@ object PlayerConnection {
     }
 
     private fun syncFromController(p: Player) {
+        if (closed) return
         val current = _nowPlaying.value
         val extras = p.mediaMetadata.extras
         // The service fills in full video info once it has looked the video up. This also restores
@@ -184,7 +192,10 @@ object PlayerConnection {
                 (p.playbackState == Player.STATE_IDLE && p.playerError == null),
             height = if (sameItem) extras?.getInt(PlaybackService.EXTRA_HEIGHT) ?: 0 else 0,
             heights = if (sameItem) extras?.getIntArray(PlaybackService.EXTRA_HEIGHTS)?.toList().orEmpty() else emptyList(),
-            error = p.playerError?.let { "Couldn't play this video. Tap to retry." },
+            error = p.playerError?.let {
+                val reason = extras?.getString(PlaybackService.EXTRA_ERROR)
+                if (reason != null) "$reason Tap to retry." else "Couldn't play this video. Tap to retry."
+            },
             speed = p.playbackParameters.speed,
         )
     }

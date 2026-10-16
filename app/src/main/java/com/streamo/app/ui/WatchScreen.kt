@@ -173,7 +173,11 @@ fun WatchScreen(
     val queue by PlayQueue.queue.collectAsState()
     // Look up the first few "up next" videos ahead of time so tapping one starts quickly.
     LaunchedEffect(details.state) {
-        (details.state as? Load.Done)?.value?.related?.take(3)?.forEach { YouTubeRepo.prefetch(it.url) }
+        val related = (details.state as? Load.Done)?.value?.related ?: return@LaunchedEffect
+        // The player already prepares the first suggestion for Next. Wait until this video has
+        // had time to start before looking up one more, so it doesn't compete for bandwidth.
+        delay(4_000)
+        related.getOrNull(1)?.let { YouTubeRepo.prefetch(it.url) }
     }
 
     var dragged by remember { mutableFloatStateOf(0f) }

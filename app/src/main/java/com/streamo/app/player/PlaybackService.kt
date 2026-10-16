@@ -65,7 +65,7 @@ class PlaybackService : MediaSessionService() {
             .build()
 
         player = ExoPlayer.Builder(this)
-            .setMediaSourceFactory(StreamSourceFactory(dataSource))
+            .setMediaSourceFactory(StreamSourceFactory(this, dataSource))
             .setLoadControl(loadControl)
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -121,7 +121,17 @@ class PlaybackService : MediaSessionService() {
             mediaSession: MediaSession,
             controller: MediaSession.ControllerInfo,
             mediaItems: List<MediaItem>,
-        ): ListenableFuture<List<MediaItem>> = scope.future { mediaItems.map { resolve(it) } }
+        ): ListenableFuture<List<MediaItem>> = scope.future {
+            mediaItems.map { item ->
+                try {
+                    resolve(item)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    failed(item, e)
+                }
+            }
+        }
     }
 
     /**
@@ -153,6 +163,19 @@ class PlaybackService : MediaSessionService() {
             .setMediaMetadata(metadata)
             .setTag(streams)
             .build()
+    }
+
+    /**
+     * The video couldn't be looked up (removed, private, age-restricted, no internet...). Hand the
+     * player an address it can't open, so it reports an error the app shows with the reason,
+     * instead of waiting forever.
+     */
+    private fun failed(item: MediaItem, e: Exception): MediaItem {
+        android.util.Log.e("Streamo", "Couldn't look up ${item.mediaId}", e)
+        val metadata = item.mediaMetadata.buildUpon()
+            .setExtras(Bundle().apply { putString(EXTRA_ERROR, com.streamo.app.ui.friendlyError(e)) })
+            .build()
+        return item.buildUpon().setUri("streamo://unavailable").setMediaMetadata(metadata).setTag(null).build()
     }
 
     /** A downloaded file: no lookup needed, just play it. */
@@ -253,6 +276,7 @@ class PlaybackService : MediaSessionService() {
         const val EXTRA_VIDEO = "video"
         const val EXTRA_HEIGHT = "height"
         const val EXTRA_HEIGHTS = "heights"
+        const val EXTRA_ERROR = "error"
         private val json = Json { ignoreUnknownKeys = true }
     }
 }
