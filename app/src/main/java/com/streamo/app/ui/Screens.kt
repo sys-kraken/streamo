@@ -64,6 +64,9 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.TextFieldValue
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
@@ -248,7 +251,11 @@ private fun ChannelBubble(ch: ChannelRef, onClick: () -> Unit) {
 
 @Composable
 fun SearchScreen(nav: Nav, contentPadding: PaddingValues) {
-    var query by rememberSaveable { mutableStateOf("") }
+    // The text together with the cursor position, so text filled in for you (a suggestion,
+    // a search) puts the cursor at the end instead of wherever it was before.
+    var field by rememberSaveable(stateSaver = TextFieldValue.Saver) { mutableStateOf(TextFieldValue()) }
+    val query = field.text
+    fun setQuery(text: String) { field = TextFieldValue(text, TextRange(text.length)) }
     var submitted by rememberSaveable { mutableStateOf("") }
     var suggestions by remember { mutableStateOf<List<String>>(emptyList()) }
     val results = remember { mutableStateListOf<SearchResult>() }
@@ -256,6 +263,7 @@ fun SearchScreen(nav: Nav, contentPadding: PaddingValues) {
     var loadingMore by remember { mutableStateOf(false) }
     val focus = remember { FocusRequester() }
     val keyboard = LocalSoftwareKeyboardController.current
+    val focusManager = LocalFocusManager.current
     val scope = rememberCoroutineScope()
     val listState = rememberLazyListState()
 
@@ -286,7 +294,9 @@ fun SearchScreen(nav: Nav, contentPadding: PaddingValues) {
     }
 
     fun submit(text: String) {
-        query = text; submitted = text; suggestions = emptyList(); keyboard?.hide()
+        setQuery(text); submitted = text; suggestions = emptyList()
+        // Let go of the search box, so its cursor doesn't linger over the results or a video.
+        keyboard?.hide(); focusManager.clearFocus()
         scope.launch { listState.scrollToItem(0) }
     }
 
@@ -294,14 +304,14 @@ fun SearchScreen(nav: Nav, contentPadding: PaddingValues) {
         Row(Modifier.fillMaxWidth().padding(top = 8.dp, end = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             IconButton(onClick = nav.back) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
             TextField(
-                value = query,
-                onValueChange = { query = it },
+                value = field,
+                onValueChange = { field = it },
                 placeholder = { Text("Search YouTube") },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Search),
                 keyboardActions = KeyboardActions(onSearch = { if (query.isNotBlank()) submit(query.trim()) }),
                 trailingIcon = {
-                    if (query.isNotEmpty()) IconButton(onClick = { query = ""; focus.requestFocus() }) {
+                    if (query.isNotEmpty()) IconButton(onClick = { setQuery(""); focus.requestFocus() }) {
                         Icon(Icons.Default.Close, "Clear")
                     }
                 },
@@ -324,7 +334,7 @@ fun SearchScreen(nav: Nav, contentPadding: PaddingValues) {
                         Icon(Icons.Default.Search, null, tint = MaterialTheme.colorScheme.onSurfaceVariant)
                         Spacer(Modifier.width(16.dp))
                         Text(s, Modifier.weight(1f))
-                        IconButton(onClick = { query = "$s " }) { Icon(Icons.Default.NorthWest, "Use") }
+                        IconButton(onClick = { setQuery("$s ") }) { Icon(Icons.Default.NorthWest, "Use") }
                     }
                 }
             }

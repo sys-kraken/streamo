@@ -47,6 +47,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -117,6 +118,9 @@ class MainActivity : ComponentActivity() {
             if (watchExpanded && now != null) fullscreen = landscape
         }
         LaunchedEffect(fullscreen) { applyFullscreen(fullscreen) }
+        // A search box's cursor and its drag handle would otherwise float over the video.
+        val focusManager = LocalFocusManager.current
+        LaunchedEffect(watchExpanded) { if (watchExpanded) focusManager.clearFocus(force = true) }
         LaunchedEffect(now == null) { if (now == null) { watchExpanded = false; fullscreen = false } }
 
         val nav = Nav(
