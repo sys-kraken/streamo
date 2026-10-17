@@ -24,11 +24,11 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import platform.AVFAudio.*
 import platform.AVFoundation.*
 import platform.CoreGraphics.CGSizeMake
 import platform.CoreMedia.*
 import platform.Foundation.NSNotificationCenter
-import platform.Foundation.NSNumber
 import platform.Foundation.NSOperationQueue
 import platform.Foundation.NSURL
 import platform.MediaPlayer.*
@@ -239,9 +239,9 @@ object IosPlayer : PlayerController {
             ?: throw IllegalStateException("Couldn't open the sound of this video.")
         val composition = AVMutableComposition.composition()
         composition.addMutableTrackWithMediaType(AVMediaTypeVideo, kCMPersistentTrackID_Invalid)
-            ?.insertTimeRange(videoTrack.timeRange, ofTrack = videoTrack, atTime = kCMTimeZero, error = null)
+            ?.insertTimeRange(videoTrack.timeRange, ofTrack = videoTrack, atTime = CMTimeMake(0, 1), error = null)
         composition.addMutableTrackWithMediaType(AVMediaTypeAudio, kCMPersistentTrackID_Invalid)
-            ?.insertTimeRange(audioTrack.timeRange, ofTrack = audioTrack, atTime = kCMTimeZero, error = null)
+            ?.insertTimeRange(audioTrack.timeRange, ofTrack = audioTrack, atTime = CMTimeMake(0, 1), error = null)
         return composition
     }
 
@@ -323,9 +323,9 @@ object IosPlayer : PlayerController {
         MPNowPlayingInfoCenter.defaultCenter().nowPlayingInfo = mapOf<Any?, Any?>(
             MPMediaItemPropertyTitle to video.title,
             MPMediaItemPropertyArtist to video.channelName,
-            MPMediaItemPropertyPlaybackDuration to NSNumber.numberWithDouble(durationSeconds().takeIf { it > 0 } ?: video.durationSec.toDouble()),
-            MPNowPlayingInfoPropertyElapsedPlaybackTime to NSNumber.numberWithDouble(positionSeconds()),
-            MPNowPlayingInfoPropertyPlaybackRate to NSNumber.numberWithDouble(if (player.timeControlStatus == AVPlayerTimeControlStatusPlaying) speed.toDouble() else 0.0),
+            MPMediaItemPropertyPlaybackDuration to (durationSeconds().takeIf { it > 0 } ?: video.durationSec.toDouble()),
+            MPNowPlayingInfoPropertyElapsedPlaybackTime to positionSeconds(),
+            MPNowPlayingInfoPropertyPlaybackRate to (if (player.timeControlStatus == AVPlayerTimeControlStatusPlaying) speed.toDouble() else 0.0),
         )
     }
 
