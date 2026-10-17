@@ -23,3 +23,60 @@ workflows:
           xcodebuild -project iosApp/Streamo.xcodeproj -scheme Streamo \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -configuration Debug ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+
+  # Started by hand ("Start new build" → this workflow). Plays test videos in the iPhone Simulator
+  # and saves screenshots, screen recordings and the player's log under Artifacts.
+  ios-sim-test:
+    name: iOS Simulator playback test
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      java: 17
+      xcode: latest
+    scripts:
+      - name: Generate Xcode project
+        script: |
+          brew install xcodegen
+          cd iosApp && xcodegen generate
+      - name: Build for the iOS simulator
+        script: |
+          chmod +x gradlew
+          xcodebuild -project iosApp/Streamo.xcodeproj -scheme Streamo \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug ARCHS=arm64 CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath build/sim build
+      - name: Play test videos in the Simulator
+        script: |
+          mkdir -p test-results
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          phones = [d for runtime, ds in sorted(devices.items(), reverse=True) if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")]
+          print(phones[0]["udid"])')
+          echo "Simulator: $DEVICE"
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" build/sim/Build/Products/Debug-iphonesimulator/Streamo.app
+
+          # play <name> <video link> <seconds to jump to once it plays>
+          play() {
+            xcrun simctl io "$DEVICE" recordVideo --codec h264 --force "test-results/$1.mp4" &
+            REC=$!
+            xcrun simctl launch --console-pty --terminate-running-process "$DEVICE" com.streamo.app \
+              -StreamoAutoplay "$2" -StreamoSeek "$3" > "test-results/$1.log" 2>&1 &
+            APP=$!
+            sleep 20
+            xcrun simctl io "$DEVICE" screenshot "test-results/$1-20s.png"
+            sleep 15
+            xcrun simctl io "$DEVICE" screenshot "test-results/$1-35s.png"
+            kill -INT $REC; wait $REC || true
+            xcrun simctl terminate "$DEVICE" com.streamo.app || true
+            kill $APP 2>/dev/null || true
+          }
+          play 1-hls "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 60
+          play 2-separate-files "https://www.youtube.com/watch?v=yT_AfrHbAyA" 120
+          play 3-sponsorblock "https://www.youtube.com/watch?v=AAtf5j5tp-8" 0
+          grep -h "StreamoPlayer" test-results/*.log > test-results/summary.txt || true
+          cat test-results/summary.txt
+    artifacts:
+      - test-results/**
