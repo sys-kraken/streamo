@@ -11,11 +11,14 @@ fun formatCount(n: Long, unit: String): String {
     return "$text $unit"
 }
 
-/** One decimal, rounded half up, without a trailing ".0" (1.25 -> "1.3", 2.0 -> "2"). */
-private fun trim(v: Double): String {
-    if (v >= 10) return v.toLong().toString()
+/** One decimal, without a trailing ".0" (1.25 -> "1.3", 2.0 -> "2"). */
+private fun trim(v: Double): String =
+    if (v >= 10) v.toLong().toString() else oneDecimal(v).removeSuffix(".0")
+
+/** One decimal, rounded half up like "%.1f" (1.25 -> "1.3", 2.0 -> "2.0"). */
+fun oneDecimal(v: Double): String {
     val tenths = (v * 10 + 0.5).toLong()
-    return "${tenths / 10}.${tenths % 10}".removeSuffix(".0")
+    return "${tenths / 10}.${tenths % 10}"
 }
 
 fun formatDuration(seconds: Long): String {

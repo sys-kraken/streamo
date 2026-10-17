@@ -17,6 +17,8 @@ profileinstaller = "1.4.1"
 junit = "4.13.2"
 compose-multiplatform = "1.12.2"
 ktor = "3.6.0"
+cmp-navigation = "2.9.2"
+cmp-icons = "1.7.3"
 okio = "3.18.2"
 compose-multiplatform-material3 = "1.9.0"
 
@@ -51,6 +53,10 @@ ktor-client-core = { module = "io.ktor:ktor-client-core", version.ref = "ktor" }
 ktor-client-okhttp = { module = "io.ktor:ktor-client-okhttp", version.ref = "ktor" }
 ktor-client-darwin = { module = "io.ktor:ktor-client-darwin", version.ref = "ktor" }
 okio = { module = "com.squareup.okio:okio", version.ref = "okio" }
+cmp-resources = { module = "org.jetbrains.compose.components:components-resources", version.ref = "compose-multiplatform" }
+cmp-navigation = { module = "org.jetbrains.androidx.navigation:navigation-compose", version.ref = "cmp-navigation" }
+cmp-icons = { module = "org.jetbrains.compose.material:material-icons-extended", version.ref = "cmp-icons" }
+coil-ktor = { module = "io.coil-kt.coil3:coil-network-ktor3", version.ref = "coil" }
 cmp-runtime = { module = "org.jetbrains.compose.runtime:runtime", version.ref = "compose-multiplatform" }
 cmp-foundation = { module = "org.jetbrains.compose.foundation:foundation", version.ref = "compose-multiplatform" }
 cmp-ui = { module = "org.jetbrains.compose.ui:ui", version.ref = "compose-multiplatform" }

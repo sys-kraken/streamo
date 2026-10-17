@@ -12,6 +12,8 @@ kotlin {
         namespace = "com.streamo.shared"
         compileSdk = 37
         minSdk = 26
+        // Shared images (the logo) are packed into the Android app too.
+        androidResources.enable = true
     }
 
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
@@ -29,6 +31,10 @@ kotlin {
             implementation(libs.cmp.foundation)
             implementation(libs.cmp.ui)
             implementation(libs.cmp.material3)
+            implementation(libs.cmp.icons)
+            implementation(libs.cmp.resources)
+            implementation(libs.cmp.navigation)
+            implementation(libs.coil.compose)
 
             api(libs.coroutines.core)
             api(libs.serialization.json)
@@ -40,6 +46,11 @@ kotlin {
         }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
+            implementation(libs.coil.ktor)
         }
     }
+}
+
+compose.resources {
+    packageOfResClass = "com.streamo.app.resources"
 }

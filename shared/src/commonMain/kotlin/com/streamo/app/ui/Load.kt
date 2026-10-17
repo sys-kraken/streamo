@@ -8,15 +8,20 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import com.streamo.app.ComingSoon
 import com.streamo.app.data.VideoItem
+import com.streamo.app.isNetworkError
+import com.streamo.app.logError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.IO
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
-import java.util.concurrent.ConcurrentHashMap
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 
 sealed interface Load<out T> {
     data object Loading : Load<Nothing>
@@ -57,27 +62,28 @@ fun <T> rememberLoad(key: Any?, cached: T? = null, block: suspend (refresh: Bool
 @OptIn(ExperimentalCoroutinesApi::class)
 object Feeds {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
-    private val lists = ConcurrentHashMap<String, Deferred<List<VideoItem>>>()
+    private val lists = MutableStateFlow<Map<String, Deferred<List<VideoItem>>>>(emptyMap())
 
     fun load(key: String, refresh: Boolean = false, block: suspend () -> List<VideoItem>): Deferred<List<VideoItem>> {
-        val existing = lists[key]
+        val existing = lists.value[key]
         val failed = existing != null && existing.isCompleted && existing.getCompletionExceptionOrNull() != null
         if (existing != null && !refresh && !failed) return existing
-        return scope.async { block() }.also { lists[key] = it }
+        return scope.async { block() }.also { fresh -> lists.update { it + (key to fresh) } }
     }
 
     /** The list if it has already finished loading. */
     fun peek(key: String): List<VideoItem>? {
-        val d = lists[key] ?: return null
+        val d = lists.value[key] ?: return null
         return if (d.isCompleted && d.getCompletionExceptionOrNull() == null) d.getCompleted() else null
     }
 }
 
 fun friendlyError(e: Throwable): String {
-    android.util.Log.e("Streamo", "Load failed", e)
+    logError("Load failed", e)
     val name = e::class.simpleName.orEmpty()
     return when {
-        e is java.net.UnknownHostException || e is java.net.SocketTimeoutException -> "No internet connection."
+        e is ComingSoon -> e.message.orEmpty()
+        isNetworkError(e) -> "No internet connection."
         name.contains("ReCaptcha") -> "YouTube is asking to slow down. Wait a minute and try again."
         name.contains("AgeRestricted") -> "This video is age-restricted and can't be played."
         name.contains("Geographic") -> "This video isn't available in your country."

@@ -2,9 +2,9 @@ package com.streamo.app.data
 
 import android.content.Context
 
-/** Saves the library in the app's "library" SharedPreferences, as Streamo always has. */
-class SharedPrefsStorage(context: Context) : KeyValueStorage {
-    private val prefs = context.getSharedPreferences("library", Context.MODE_PRIVATE)
+/** Saves in one of the app's SharedPreferences files ("library", "downloads"), as Streamo always has. */
+class SharedPrefsStorage(context: Context, name: String = "library") : KeyValueStorage {
+    private val prefs = context.getSharedPreferences(name, Context.MODE_PRIVATE)
 
     override fun get(key: String): String? = prefs.getString(key, null)
 

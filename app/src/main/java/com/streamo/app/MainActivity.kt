@@ -5,7 +5,6 @@ import android.app.PictureInPictureParams
 import android.content.Intent
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
-import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.util.Rational
@@ -14,237 +13,56 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.statusBarsPadding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Home
-import androidx.compose.material.icons.filled.Subscriptions
-import androidx.compose.material.icons.filled.VideoLibrary
-import androidx.compose.material.icons.outlined.Home
-import androidx.compose.material.icons.outlined.Subscriptions
-import androidx.compose.material.icons.outlined.VideoLibrary
-import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.NavigationBar
-import androidx.compose.material3.NavigationBarItem
-import androidx.compose.material3.NavigationBarItemDefaults
-import androidx.compose.material3.Text
-import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalConfiguration
-import androidx.compose.ui.platform.LocalFocusManager
 import androidx.core.view.WindowCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.navigation.NavHostController
-import androidx.navigation.NavType
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
-import androidx.navigation.compose.currentBackStackEntryAsState
-import androidx.navigation.compose.rememberNavController
-import androidx.navigation.navArgument
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.SponsorBlock
 import com.streamo.app.data.VideoItem
-import com.streamo.app.player.PlayerConnection
 import com.streamo.app.download.Downloads
-import com.streamo.app.ui.ChannelScreen
-import com.streamo.app.ui.DownloadsScreen
-import com.streamo.app.ui.LocalPlaylistScreen
-import com.streamo.app.ui.YouTubePlaylistScreen
-import com.streamo.app.ui.HomeScreen
-import com.streamo.app.ui.LibraryScreen
-import com.streamo.app.ui.MiniPlayer
-import com.streamo.app.ui.Nav
+import com.streamo.app.player.AndroidPlayer
+import com.streamo.app.player.PlayerConnection
+import com.streamo.app.ui.AppState
 import com.streamo.app.ui.PlayerSurface
-import com.streamo.app.ui.SearchScreen
-import com.streamo.app.ui.SettingsScreen
+import com.streamo.app.ui.StreamoRoot
 import com.streamo.app.ui.StreamoTheme
-import com.streamo.app.ui.SubscriptionsScreen
-import com.streamo.app.ui.WatchScreen
 
 class MainActivity : ComponentActivity() {
 
-    private var watchExpanded by mutableStateOf(false)
-    private var fullscreen by mutableStateOf(false)
+    /** The shared app's frame (player open, fullscreen, page requests); this activity adds Android's parts. */
+    private val state = AppState()
     private var inPip by mutableStateOf(false)
-    private var openRequest by mutableStateOf<String?>(null)
 
     private val askNotifications = registerForActivityResult(ActivityResultContracts.RequestPermission()) {}
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
-        PlayerConnection.connect(this)
+        AndroidPlayer.connect(this)
         if (Build.VERSION.SDK_INT >= 33) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
         handleShare(intent)
-        openRequest = intent?.getStringExtra(EXTRA_OPEN)
-        Downloads.resumeIfNeeded(this)
+        state.openRequest = intent?.getStringExtra(EXTRA_OPEN)
+        Downloads.resumeIfNeeded()
 
         setContent {
             StreamoTheme {
                 if (inPip) {
                     PlayerSurface(Modifier.fillMaxSize(), controls = false)
                 } else {
-                    AppContent()
+                    val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+                    LaunchedEffect(state.fullscreen) { applyFullscreen(state.fullscreen) }
+                    BackHandler(enabled = state.fullscreen || state.watchExpanded) { state.back() }
+                    StreamoRoot(state, landscape, onPip = ::enterPip)
                 }
             }
         }
-    }
-
-    @Composable
-    private fun AppContent() {
-        val navController = rememberNavController()
-        val now by PlayerConnection.nowPlaying.collectAsState()
-        val landscape = LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-
-        // Turning the phone sideways while watching goes fullscreen, like YouTube.
-        LaunchedEffect(landscape) {
-            if (watchExpanded && now != null) fullscreen = landscape
-        }
-        LaunchedEffect(fullscreen) { applyFullscreen(fullscreen) }
-        // A search box's cursor and its drag handle would otherwise float over the video.
-        val focusManager = LocalFocusManager.current
-        LaunchedEffect(watchExpanded) { if (watchExpanded) focusManager.clearFocus(force = true) }
-        LaunchedEffect(now == null) { if (now == null) { watchExpanded = false; fullscreen = false } }
-
-        val nav = Nav(
-            openVideo = { video -> play(video) },
-            openChannel = { url -> navController.navigate("channel/${Uri.encode(url)}") },
-            openSearch = { navController.navigate("search") },
-            openSettings = { navController.navigate("settings") },
-            openPlaylist = { id -> navController.navigate("playlist/$id") },
-            openYouTubePlaylist = { url -> navController.navigate("ytplaylist/${Uri.encode(url)}") },
-            openDownloads = { navController.navigate("downloads") },
-            back = { navController.popBackStack() },
-        )
-
-        // The download notification opens the Downloads page.
-        LaunchedEffect(openRequest) {
-            if (openRequest == "downloads") {
-                watchExpanded = false
-                navController.navigate("downloads") { launchSingleTop = true }
-                openRequest = null
-            }
-        }
-
-        BackHandler(enabled = fullscreen || watchExpanded) {
-            if (fullscreen) fullscreen = false else watchExpanded = false
-        }
-
-        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-            Column(Modifier.fillMaxSize()) {
-                Box(Modifier.weight(1f).statusBarsPadding()) {
-                    AppNavHost(navController, nav)
-                }
-                val current = now
-                if (current != null && !watchExpanded) {
-                    MiniPlayer(current) { watchExpanded = true }
-                }
-                BottomBar(navController)
-            }
-
-            val current = now
-            AnimatedVisibility(
-                visible = current != null && watchExpanded,
-                enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { it } + fadeIn(tween(200)),
-                exit = slideOutVertically(tween(220, easing = FastOutSlowInEasing)) { it } + fadeOut(tween(180)),
-            ) {
-                if (current != null) {
-                    WatchScreen(
-                        now = current,
-                        fullscreen = fullscreen,
-                        onToggleFullscreen = { fullscreen = !fullscreen },
-                        onCollapse = { watchExpanded = false },
-                        onPip = ::enterPip,
-                        nav = nav,
-                    )
-                }
-            }
-        }
-    }
-
-    @Composable
-    private fun AppNavHost(navController: NavHostController, nav: Nav) {
-        val pad = PaddingValues()
-        // No fade animations between screens: switching should feel instant.
-        NavHost(
-            navController,
-            startDestination = "home",
-            // A very short fade: smooth, but not slow like the default 0.7 s.
-            enterTransition = { fadeIn(tween(150)) },
-            exitTransition = { fadeOut(tween(120)) },
-            popEnterTransition = { fadeIn(tween(150)) },
-            popExitTransition = { fadeOut(tween(120)) },
-        ) {
-            composable("home") { HomeScreen(nav, pad) }
-            composable("subs") { SubscriptionsScreen(nav, pad) }
-            composable("library") { LibraryScreen(nav, pad) }
-            composable("search") { SearchScreen(nav, pad) }
-            composable("settings") { SettingsScreen(nav, pad) }
-            composable("downloads") { DownloadsScreen(nav, onPlayed = { watchExpanded = true }, pad) }
-            composable("playlist/{id}") { entry -> LocalPlaylistScreen(entry.arguments?.getString("id").orEmpty(), nav, pad) }
-            composable("ytplaylist/{url}") { entry ->
-                YouTubePlaylistScreen(Uri.decode(entry.arguments?.getString("url").orEmpty()), nav, pad)
-            }
-            composable("channel/{url}", arguments = listOf(navArgument("url") { type = NavType.StringType })) { entry ->
-                ChannelScreen(Uri.decode(entry.arguments?.getString("url").orEmpty()), nav, pad)
-            }
-        }
-    }
-
-    @Composable
-    private fun BottomBar(navController: NavHostController) {
-        val route = navController.currentBackStackEntryAsState().value?.destination?.route
-        NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
-            listOf(
-                Triple("home", "Home", Icons.Filled.Home to Icons.Outlined.Home),
-                Triple("subs", "Subscriptions", Icons.Filled.Subscriptions to Icons.Outlined.Subscriptions),
-                Triple("library", "Library", Icons.Filled.VideoLibrary to Icons.Outlined.VideoLibrary),
-            ).forEach { (dest, label, icons) ->
-                val selected = route == dest
-                NavigationBarItem(
-                    selected = selected,
-                    onClick = {
-                        watchExpanded = false
-                        // A tab always opens its own main screen, closing Settings, Search, a channel, etc.
-                        if (dest == "home") {
-                            navController.popBackStack("home", inclusive = false)
-                        } else {
-                            navController.navigate(dest) {
-                                popUpTo("home")
-                                launchSingleTop = true
-                            }
-                        }
-                    },
-                    icon = { Icon(if (selected) icons.first else icons.second, label) },
-                    label = { Text(label) },
-                    colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.surfaceVariant),
-                )
-            }
-        }
-    }
-
-    private fun play(video: VideoItem) {
-        PlayerConnection.play(video)
-        watchExpanded = true
     }
 
     // ---------- Picture-in-picture & background ----------
@@ -260,7 +78,7 @@ class MainActivity : ComponentActivity() {
         super.onUserLeaveHint()
         // Pressing Home while watching keeps the video in a small floating window.
         val now = PlayerConnection.nowPlaying.value
-        if (watchExpanded && now?.isPlaying == true) enterPip()
+        if (state.watchExpanded && now?.isPlaying == true) enterPip()
     }
 
     override fun onPictureInPictureModeChanged(isInPictureInPictureMode: Boolean, newConfig: Configuration) {
@@ -298,14 +116,14 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         handleShare(intent)
-        intent.getStringExtra(EXTRA_OPEN)?.let { openRequest = it }
+        intent.getStringExtra(EXTRA_OPEN)?.let { state.openRequest = it }
     }
 
     private fun handleShare(intent: Intent?) {
         if (intent?.action != Intent.ACTION_SEND) return
         val text = intent.getStringExtra(Intent.EXTRA_TEXT) ?: return
         val id = SponsorBlock.videoId(text) ?: return
-        play(VideoItem("https://www.youtube.com/watch?v=$id", "Loading…", "", null, null, 0, -1, null))
+        state.play(VideoItem("https://www.youtube.com/watch?v=$id", "Loading…", "", null, null, 0, -1, null))
     }
 
     companion object {

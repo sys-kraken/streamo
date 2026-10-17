@@ -1,10 +1,5 @@
 package com.streamo.app.ui
 
-import android.Manifest
-import android.os.Build
-import android.widget.Toast
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -39,47 +34,38 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import com.streamo.app.Platform
+import com.streamo.app.data.DownloadOption
 import com.streamo.app.data.VideoItem
 import com.streamo.app.data.YouTubeRepo
 import com.streamo.app.download.DownloadEntry
 import com.streamo.app.download.Downloads
 import com.streamo.app.player.PlayerConnection
-import java.util.Locale
 
 fun formatBytes(bytes: Long): String = when {
     bytes <= 0 -> ""
-    bytes >= 1L shl 30 -> String.format(Locale.US, "%.1f GB", bytes / (1L shl 30).toDouble())
-    bytes >= 1L shl 20 -> String.format(Locale.US, "%.1f MB", bytes / (1L shl 20).toDouble())
-    else -> String.format(Locale.US, "%d KB", bytes / 1024)
+    bytes >= 1L shl 30 -> oneDecimal(bytes / (1L shl 30).toDouble()) + " GB"
+    bytes >= 1L shl 20 -> oneDecimal(bytes / (1L shl 20).toDouble()) + " MB"
+    else -> "${bytes / 1024} KB"
 }
 
 /** "Download" sheet from the watch screen: pick a quality or sound only. */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun DownloadSheet(video: VideoItem, onDismiss: () -> Unit) {
-    val context = LocalContext.current
     val options = rememberLoad(video.url) { YouTubeRepo.downloadOptions(video.url) }
-    var pending by remember { mutableStateOf<YouTubeRepo.DownloadOption?>(null) }
 
-    fun start(o: YouTubeRepo.DownloadOption) {
-        Downloads.enqueue(context, video, o.audioOnly, o.height)
-        Toast.makeText(context, "Downloading… see Library → Downloads", Toast.LENGTH_SHORT).show()
+    fun start(o: DownloadOption) {
+        Downloads.enqueue(video, o.audioOnly, o.height)
+        Platform.ui.toast("Downloading… see Library → Downloads")
         onDismiss()
     }
     // Android 9 and older ask for storage permission before saving to Movies / Music.
-    val askStorage = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-        val o = pending
-        if (granted && o != null) start(o)
-        else Toast.makeText(context, "Streamo needs storage access to save downloads.", Toast.LENGTH_LONG).show()
-    }
+    val withPermission = Platform.ui.rememberDownloadPermission()
 
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
@@ -91,11 +77,7 @@ fun DownloadSheet(video: VideoItem, onDismiss: () -> Unit) {
                     if (s.value.isEmpty()) Text("This video can't be downloaded.", Modifier.padding(20.dp))
                     s.value.forEach { o ->
                         Row(
-                            Modifier.fillMaxWidth().clickable {
-                                if (Build.VERSION.SDK_INT < 29) {
-                                    pending = o; askStorage.launch(Manifest.permission.WRITE_EXTERNAL_STORAGE)
-                                } else start(o)
-                            }.padding(horizontal = 20.dp, vertical = 13.dp),
+                            Modifier.fillMaxWidth().clickable { withPermission { start(o) } }.padding(horizontal = 20.dp, vertical = 13.dp),
                             verticalAlignment = Alignment.CenterVertically,
                         ) {
                             Icon(if (o.audioOnly) Icons.Default.MusicNote else Icons.Default.Videocam, null)
@@ -120,7 +102,6 @@ fun DownloadSheet(video: VideoItem, onDismiss: () -> Unit) {
 
 @Composable
 fun DownloadsScreen(nav: Nav, onPlayed: () -> Unit, contentPadding: PaddingValues) {
-    val context = LocalContext.current
     val entries by Downloads.entries.collectAsState()
     val progress by Downloads.progress.collectAsState()
 
@@ -149,10 +130,10 @@ fun DownloadsScreen(nav: Nav, onPlayed: () -> Unit, contentPadding: PaddingValue
                         PlayerConnection.playLocal(e.video, uri); onPlayed()
                     }
                 },
-                onRetry = { Downloads.retry(context, e.id) },
+                onRetry = { Downloads.retry(e.id) },
                 onRemove = {
                     if (e.status == DownloadEntry.Status.QUEUED || e.status == DownloadEntry.Status.RUNNING) Downloads.cancel(e.id)
-                    else Downloads.delete(context, e.id)
+                    else Downloads.delete(e.id)
                 },
             )
         }

@@ -27,7 +27,7 @@ import com.streamo.app.StreamoApp
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.SkipSegment
 import com.streamo.app.data.VideoItem
-import com.streamo.app.data.YouTubeRepo
+import com.streamo.app.data.NewPipeRepo
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -143,7 +143,7 @@ class PlaybackService : MediaSessionService() {
         val url = item.mediaId
         val maxHeight = item.requestMetadata.extras?.getInt(EXTRA_MAX_HEIGHT)?.takeIf { it > 0 }
             ?: LibraryStore.settings.value.maxHeight
-        val (video, streams) = YouTubeRepo.streams(url, maxHeight)
+        val (video, streams) = NewPipeRepo.streams(url, maxHeight)
 
         val extras = Bundle().apply {
             putString(EXTRA_VIDEO, json.encodeToString(video))
@@ -211,7 +211,7 @@ class PlaybackService : MediaSessionService() {
             val http = error.cause as? HttpDataSource.InvalidResponseCodeException
             if (http?.responseCode != 403 || retriedUrl == item.mediaId) return
             retriedUrl = item.mediaId
-            YouTubeRepo.invalidate(item.mediaId)
+            NewPipeRepo.invalidate(item.mediaId)
             val position = player.currentPosition
             scope.launch {
                 runCatching { resolve(item) }.onSuccess { fresh ->
@@ -233,7 +233,7 @@ class PlaybackService : MediaSessionService() {
     private suspend fun queueUpNext(url: String) {
         // In a playlist, the next video is the playlist's; otherwise YouTube's first suggestion.
         val next = PlayQueue.nextAfter(url) ?: run {
-            val details = runCatching { YouTubeRepo.details(url, LibraryStore.settings.value.maxHeight) }.getOrNull()
+            val details = runCatching { NewPipeRepo.details(url, LibraryStore.settings.value.maxHeight) }.getOrNull()
                 ?: return
             val recent = LibraryStore.history.value.take(50).map { it.url }.toSet()
             details.related.firstOrNull { it.url !in recent && !it.isLive }

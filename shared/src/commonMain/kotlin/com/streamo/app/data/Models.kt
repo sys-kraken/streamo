@@ -89,3 +89,6 @@ data class PlaylistPage(
     val videos: List<VideoItem>,
     val next: Any?,
 )
+
+/** A choice offered in the Download sheet; [sizeBytes] is 0 when YouTube does not say. */
+data class DownloadOption(val audioOnly: Boolean, val height: Int, val sizeBytes: Long)

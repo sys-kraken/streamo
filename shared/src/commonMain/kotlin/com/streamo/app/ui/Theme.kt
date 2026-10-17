@@ -15,11 +15,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.streamo.app.R
+import com.streamo.app.resources.Res
+import com.streamo.app.resources.logo
+import org.jetbrains.compose.resources.painterResource
 
 // Colors from the Streamo logo.
 val Flame = Color(0xFFE2401A)      // red of "STRE"
@@ -71,7 +72,7 @@ fun StreamoTheme(content: @Composable () -> Unit) {
 fun BrandTitle(modifier: Modifier = Modifier) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
         Image(
-            painterResource(R.drawable.logo), contentDescription = null,
+            painterResource(Res.drawable.logo), contentDescription = null,
             modifier = Modifier.size(38.dp).clip(RoundedCornerShape(9.dp)),
         )
         Column {

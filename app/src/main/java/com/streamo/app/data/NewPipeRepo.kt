@@ -35,10 +35,10 @@ import org.schabi.newpipe.extractor.stream.VideoStream
 import java.util.concurrent.ConcurrentHashMap
 
 /**
- * All YouTube access goes through here. Video lookups are cached and de-duplicated so
+ * Android's [VideoSource], built on NewPipeExtractor. All YouTube access goes through here. Video lookups are cached and de-duplicated so
  * a video that was prefetched (e.g. on touch-down) starts instantly when opened.
  */
-object YouTubeRepo {
+object NewPipeRepo : VideoSource {
     private val yt get() = ServiceList.YouTube
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
@@ -50,11 +50,11 @@ object YouTubeRepo {
     // ---------- Videos ----------
 
     /** Start looking up a video in the background; cheap to call repeatedly. */
-    fun prefetch(url: String) {
+    override fun prefetch(url: String) {
         infoFor(url)
     }
 
-    suspend fun details(url: String, maxHeight: Int): VideoDetails {
+    override suspend fun details(url: String, maxHeight: Int): VideoDetails {
         val info = infoFor(url).await()
         return VideoDetails(
             item = info.toVideoItem(),
@@ -174,19 +174,19 @@ object YouTubeRepo {
 
     // ---------- Search ----------
 
-    suspend fun search(query: String): SearchPage = io {
+    override suspend fun search(query: String): SearchPage = io {
         val handler = yt.searchQHFactory.fromQuery(query, listOf(YoutubeSearchQueryHandlerFactory.ALL), "")
         val info = SearchInfo.getInfo(yt, handler)
         SearchPage(info.relatedItems.mapNotNull { it.toSearchResult() }, info.nextPage)
     }
 
-    suspend fun searchMore(query: String, next: Any): SearchPage = io {
+    override suspend fun searchMore(query: String, next: Any): SearchPage = io {
         val handler = yt.searchQHFactory.fromQuery(query, listOf(YoutubeSearchQueryHandlerFactory.ALL), "")
         val page = SearchInfo.getMoreItems(yt, handler, next as Page)
         SearchPage(page.items.mapNotNull { it.toSearchResult() }, page.nextPage)
     }
 
-    suspend fun suggestions(query: String): List<String> = io {
+    override suspend fun suggestions(query: String): List<String> = io {
         runCatching { yt.suggestionExtractor.suggestionList(query) }.getOrDefault(emptyList())
     }
 
@@ -203,13 +203,13 @@ object YouTubeRepo {
      * YouTube's explore lists that still work, in display order. YouTube shut down its old
      * Trending page, and the podcasts list currently fails to load, so those are left out.
      */
-    fun exploreLists(): List<String> {
+    override fun exploreLists(): List<String> {
         val available = yt.kioskList.availableKiosks
         return listOf("trending_music", "trending_gaming", "trending_movies_and_shows", "live").filter { it in available }
     }
 
     /** "For you": videos related to the last few things watched, mixed together. */
-    suspend fun forYou(history: List<VideoItem>): List<VideoItem> = coroutineScope {
+    override suspend fun forYou(history: List<VideoItem>): List<VideoItem> = coroutineScope {
         val watched = history.map { it.url }.toSet()
         val lists = history.take(4).map { v ->
             async {
@@ -226,7 +226,7 @@ object YouTubeRepo {
         mixed.filter { it.url !in watched }.distinctBy { it.url }
     }
 
-    suspend fun explore(kioskId: String): List<VideoItem> = io {
+    override suspend fun explore(kioskId: String): List<VideoItem> = io {
         // Some charts don't exist everywhere (e.g. YouTube has no Music chart for the
         // Philippines). Then show the US chart rather than an error.
         runCatching { kiosk(kioskId, null) }.getOrElse { kiosk(kioskId, ContentCountry("US")) }
@@ -240,7 +240,7 @@ object YouTubeRepo {
     }
 
     /** Latest uploads from all subscribed channels, newest first. Uses YouTube's lightweight feeds. */
-    suspend fun subscriptionFeed(channels: List<ChannelRef>): List<VideoItem> = coroutineScope {
+    override suspend fun subscriptionFeed(channels: List<ChannelRef>): List<VideoItem> = coroutineScope {
         channels.map { ch ->
             async(Dispatchers.IO) {
                 runCatching {
@@ -256,9 +256,6 @@ object YouTubeRepo {
 
     // ---------- Downloads ----------
 
-    /** A choice offered in the Download sheet; [sizeBytes] is 0 when YouTube doesn't say. */
-    data class DownloadOption(val audioOnly: Boolean, val height: Int, val sizeBytes: Long)
-
     /** H.264 MP4 picture files (the kind phones and the MP4 joiner handle everywhere). */
     private fun downloadableVideo(info: StreamInfo) = playableVideo(info).filter {
         it.format == MediaFormat.MPEG_4 && (it.codec ?: it.itagItem?.codec ?: "").startsWith("avc")
@@ -273,7 +270,7 @@ object YouTubeRepo {
         else -> 0
     }.coerceAtLeast(0)
 
-    suspend fun downloadOptions(url: String): List<DownloadOption> {
+    override suspend fun downloadOptions(url: String): List<DownloadOption> {
         val info = infoFor(url).await()
         val audio = downloadableAudio(info).firstOrNull() ?: return emptyList()
         val audioSize = sizeOf(audio)
@@ -297,9 +294,17 @@ object YouTubeRepo {
         return video to audio
     }
 
+    // ---------- Channel pictures ----------
+
+    override suspend fun channelAvatar(url: String): String? = io {
+        ChannelInfo.getInfo(yt, url).avatars
+            .filter { it.height > 0 }.sortedBy { it.height }
+            .let { list -> (list.firstOrNull { it.height >= 68 } ?: list.lastOrNull())?.url }
+    }
+
     // ---------- YouTube playlists ----------
 
-    suspend fun playlist(url: String): PlaylistPage = io {
+    override suspend fun playlist(url: String): PlaylistPage = io {
         val info = PlaylistInfo.getInfo(yt, url)
         val videos = info.relatedItems.map { it.toVideoItem() }
         PlaylistPage(
@@ -312,14 +317,14 @@ object YouTubeRepo {
         )
     }
 
-    suspend fun playlistMore(url: String, next: Any): Pair<List<VideoItem>, Any?> = io {
+    override suspend fun playlistMore(url: String, next: Any): Pair<List<VideoItem>, Any?> = io {
         val page = PlaylistInfo.getMoreItems(yt, url, next as Page)
         page.items.map { it.toVideoItem() } to page.nextPage
     }
 
     // ---------- Channels ----------
 
-    suspend fun channel(url: String): ChannelPage = io {
+    override suspend fun channel(url: String): ChannelPage = io {
         val info = ChannelInfo.getInfo(yt, url)
         val videosTab = info.tabs.firstOrNull { ChannelTabs.VIDEOS in it.contentFilters }
         val videos = videosTab?.let { tab ->

@@ -1,9 +1,8 @@
 package com.streamo.app.download
 
-import android.content.Context
-import android.content.SharedPreferences
-import android.net.Uri
+import com.streamo.app.data.KeyValueStorage
 import com.streamo.app.data.VideoItem
+import com.streamo.app.nowMillis
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -11,8 +10,8 @@ import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.File
-import java.util.UUID
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
 
 @Serializable
 data class DownloadEntry(
@@ -26,15 +25,25 @@ data class DownloadEntry(
     val uri: String? = null,
     val sizeBytes: Long = 0,
     val error: String? = null,
-    val createdAt: Long = System.currentTimeMillis(),
+    val createdAt: Long = nowMillis(),
 ) {
     enum class Status { QUEUED, RUNNING, DONE, FAILED }
+}
+
+/** Does the actual downloading. Android: DownloadService; iOS: later. */
+interface DownloadRunner {
+    /** Start working through the queued downloads (does nothing if already running). */
+    fun start()
+
+    /** Deletes a finished download's file. */
+    fun deleteFile(uri: String)
 }
 
 /** The list of downloads (saved on the phone) and their live progress. */
 object Downloads {
     private val json = Json { ignoreUnknownKeys = true }
-    private lateinit var prefs: SharedPreferences
+    private lateinit var storage: KeyValueStorage
+    private lateinit var runner: DownloadRunner
 
     private val _entries = MutableStateFlow<List<DownloadEntry>>(emptyList())
     val entries: StateFlow<List<DownloadEntry>> = _entries.asStateFlow()
@@ -43,11 +52,12 @@ object Downloads {
     private val _progress = MutableStateFlow<Map<String, Float>>(emptyMap())
     val progress: StateFlow<Map<String, Float>> = _progress.asStateFlow()
 
-    private val cancelled = mutableSetOf<String>()
+    private val cancelled = MutableStateFlow<Set<String>>(emptySet())
 
-    fun init(context: Context) {
-        prefs = context.getSharedPreferences("downloads", Context.MODE_PRIVATE)
-        val saved = prefs.getString("entries", null)
+    fun init(storage: KeyValueStorage, runner: DownloadRunner) {
+        this.storage = storage
+        this.runner = runner
+        val saved = storage.get("entries")
             ?.let { runCatching { json.decodeFromString<List<DownloadEntry>>(it) }.getOrNull() }.orEmpty()
         // Anything that was mid-download when the app was closed starts again.
         _entries.value = saved.map {
@@ -56,59 +66,51 @@ object Downloads {
     }
 
     /** Called when the app opens: carries on with downloads that were waiting. */
-    fun resumeIfNeeded(context: Context) {
-        if (_entries.value.any { it.status == DownloadEntry.Status.QUEUED }) DownloadService.start(context)
+    fun resumeIfNeeded() {
+        if (_entries.value.any { it.status == DownloadEntry.Status.QUEUED }) runner.start()
     }
 
-    fun enqueue(context: Context, video: VideoItem, audioOnly: Boolean, height: Int) {
-        val entry = DownloadEntry(UUID.randomUUID().toString(), video, audioOnly, height)
+    @OptIn(ExperimentalUuidApi::class)
+    fun enqueue(video: VideoItem, audioOnly: Boolean, height: Int) {
+        val entry = DownloadEntry(Uuid.random().toString(), video, audioOnly, height)
         edit { listOf(entry) + it }
-        DownloadService.start(context)
+        runner.start()
     }
 
-    fun retry(context: Context, id: String) {
+    fun retry(id: String) {
         update(id) { it.copy(status = DownloadEntry.Status.QUEUED, error = null) }
-        DownloadService.start(context)
+        runner.start()
     }
 
     /** Stops a queued or running download and removes it. */
     fun cancel(id: String) {
-        synchronized(cancelled) { cancelled += id }
+        cancelled.update { it + id }
         edit { list -> list.filterNot { it.id == id } }
         setProgress(id, null)
     }
 
     /** Removes a download from the list and deletes its file. */
-    fun delete(context: Context, id: String) {
+    fun delete(id: String) {
         val entry = _entries.value.firstOrNull { it.id == id } ?: return
-        entry.uri?.let { deleteFile(context, Uri.parse(it)) }
+        entry.uri?.let { runCatching { runner.deleteFile(it) } }
         edit { list -> list.filterNot { it.id == id } }
     }
 
-    // ---------- Used by DownloadService ----------
+    // ---------- Used by the platform's downloader ----------
 
-    internal fun nextQueued(): DownloadEntry? =
+    fun nextQueued(): DownloadEntry? =
         _entries.value.lastOrNull { it.status == DownloadEntry.Status.QUEUED } // oldest first
 
-    internal fun isCancelled(id: String) = synchronized(cancelled) { id in cancelled }
+    fun isCancelled(id: String) = id in cancelled.value
 
-    internal fun update(id: String, change: (DownloadEntry) -> DownloadEntry) =
+    fun update(id: String, change: (DownloadEntry) -> DownloadEntry) =
         edit { list -> list.map { if (it.id == id) change(it) else it } }
 
-    internal fun setProgress(id: String, value: Float?) =
+    fun setProgress(id: String, value: Float?) =
         _progress.update { if (value == null) it - id else it + (id to value) }
 
     private fun edit(change: (List<DownloadEntry>) -> List<DownloadEntry>) {
         _entries.update(change)
-        prefs.edit().putString("entries", json.encodeToString(_entries.value)).apply()
-    }
-
-    private fun deleteFile(context: Context, uri: Uri) {
-        runCatching {
-            when (uri.scheme) {
-                "content" -> context.contentResolver.delete(uri, null, null)
-                "file" -> uri.path?.let { File(it).delete() }
-            }
-        }
+        storage.put("entries", json.encodeToString(_entries.value))
     }
 }

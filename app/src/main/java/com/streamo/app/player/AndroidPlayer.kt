@@ -11,27 +11,14 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
+import com.streamo.app.data.NewPipeRepo
 import com.streamo.app.data.VideoItem
-import com.streamo.app.data.YouTubeRepo
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
-/** What the screens need to know about playback. */
-data class NowPlaying(
-    val video: VideoItem,
-    val isPlaying: Boolean = false,
-    val isBuffering: Boolean = true,
-    val height: Int = 0,
-    val heights: List<Int> = emptyList(),
-    val error: String? = null,
-    /** False until this video's first moment actually plays; the thumbnail is shown until then. */
-    val started: Boolean = false,
-    val speed: Float = 1f,
-)
-
-/** The app's handle on [PlaybackService]'s player. */
-object PlayerConnection {
+/** Android's [PlayerController]: the app's handle on [PlaybackService]'s player. */
+object AndroidPlayer : PlayerController {
     private val json = kotlinx.serialization.json.Json { ignoreUnknownKeys = true }
     private var controller: MediaController? = null
 
@@ -40,7 +27,7 @@ object PlayerConnection {
     private var pending: (MediaController.() -> Unit)? = null
 
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
-    val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
+    override val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
 
     /** The player, once connected; the video surface attaches to this. */
     private val _player = MutableStateFlow<Player?>(null)
@@ -61,11 +48,10 @@ object PlayerConnection {
         }, MoreExecutors.directExecutor())
     }
 
-    /** Plays one video. Unless [fromQueue], any playlist in progress ends. */
-    fun play(video: VideoItem, fromQueue: Boolean = false) {
+    override fun play(video: VideoItem, fromQueue: Boolean) {
         closed = false
         if (!fromQueue) PlayQueue.clear() else PlayQueue.moveTo(video.url)
-        YouTubeRepo.prefetch(video.url)
+        NewPipeRepo.prefetch(video.url)
         _nowPlaying.value = NowPlaying(video)
         withController {
             stop() // silence the previous video right away instead of while the new one loads
@@ -75,8 +61,7 @@ object PlayerConnection {
         }
     }
 
-    /** Plays a downloaded file (works offline). */
-    fun playLocal(video: VideoItem, fileUri: String) {
+    override fun playLocal(video: VideoItem, fileUri: String) {
         closed = false
         PlayQueue.clear()
         _nowPlaying.value = NowPlaying(video)
@@ -96,16 +81,14 @@ object PlayerConnection {
         }
     }
 
-    /** Plays a playlist from [index]; Next and autoplay then follow the playlist. */
-    fun playQueue(title: String, videos: List<VideoItem>, index: Int = 0) {
+    override fun playQueue(title: String, videos: List<VideoItem>, index: Int) {
         if (videos.isEmpty()) return
         PlayQueue.start(title, videos, index)
         play(videos[index.coerceIn(0, videos.lastIndex)], fromQueue = true)
-        videos.getOrNull(index + 1)?.let { YouTubeRepo.prefetch(it.url) }
+        videos.getOrNull(index + 1)?.let { NewPipeRepo.prefetch(it.url) }
     }
 
-    /** Switch quality, continuing from the same spot. */
-    fun setQuality(height: Int) {
+    override fun setQuality(height: Int) {
         val now = _nowPlaying.value ?: return
         withController {
             val position = currentPosition
@@ -115,11 +98,11 @@ object PlayerConnection {
         }
     }
 
-    fun setSpeed(speed: Float) = withController { setPlaybackSpeed(speed) }
+    override fun setSpeed(speed: Float) = withController { setPlaybackSpeed(speed) }
 
-    fun togglePlay() = withController { if (isPlaying) pause() else play() }
+    override fun togglePlay() = withController { if (isPlaying) pause() else play() }
 
-    fun close() {
+    override fun close() {
         closed = true
         PlayQueue.clear()
         _nowPlaying.value = null
@@ -129,14 +112,13 @@ object PlayerConnection {
         }
     }
 
-    /** With the screen off or the app hidden, stop downloading the picture and keep the sound. */
-    fun setVideoEnabled(enabled: Boolean) = withController {
+    override fun setVideoEnabled(enabled: Boolean) = withController {
         trackSelectionParameters = trackSelectionParameters.buildUpon()
             .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !enabled)
             .build()
     }
 
-    fun pause() = withController { pause() }
+    override fun pause() = withController { pause() }
 
     private fun requestItem(video: VideoItem, maxHeight: Int): MediaItem =
         MediaItem.Builder()
@@ -200,9 +182,14 @@ object PlayerConnection {
         )
     }
 
-    fun retry() = withController {
+    override fun progress(): Float? {
+        val c = controller ?: return null
+        return if (c.duration > 0) c.currentPosition.toFloat() / c.duration else null
+    }
+
+    override fun retry() = withController {
         val now = _nowPlaying.value ?: return@withController
-        YouTubeRepo.invalidate(now.video.url)
+        NewPipeRepo.invalidate(now.video.url)
         setMediaItem(requestItem(now.video, 0), currentPosition)
         prepare()
         play()

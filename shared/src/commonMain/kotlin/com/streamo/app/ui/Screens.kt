@@ -75,6 +75,7 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil3.compose.AsyncImage
+import com.streamo.app.Platform
 import com.streamo.app.data.ChannelRef
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.SearchResult
@@ -530,7 +531,7 @@ fun SettingsScreen(nav: Nav, contentPadding: PaddingValues) {
                 Text("Settings", style = MaterialTheme.typography.titleLarge)
             }
         }
-        item { UpdateSection() }
+        item { Platform.ui.AppUpdates() }
         item {
             ToggleRow("Play in background", "Keep the sound playing when you leave the app or turn the screen off.", settings.backgroundPlay) { on ->
                 LibraryStore.updateSettings { it.copy(backgroundPlay = on) }

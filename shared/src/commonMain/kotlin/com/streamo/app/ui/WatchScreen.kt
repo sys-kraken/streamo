@@ -1,7 +1,5 @@
 package com.streamo.app.ui
 
-import android.content.Intent
-import androidx.annotation.OptIn
 import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -58,31 +56,24 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.viewinterop.AndroidView
-import androidx.media3.common.Player
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
+import com.streamo.app.Platform
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.YouTubeRepo
+import com.streamo.app.htmlToText
 import com.streamo.app.player.NowPlaying
 import com.streamo.app.player.PlayQueue
 import com.streamo.app.player.PlayerConnection
 import kotlinx.coroutines.delay
 
 /** The video surface with YouTube-style controls (seek bar, play/pause, fullscreen). */
-@OptIn(UnstableApi::class)
 @Composable
 fun PlayerSurface(
     modifier: Modifier,
@@ -91,40 +82,9 @@ fun PlayerSurface(
     onFullscreen: (() -> Unit)? = null,
     onSettings: (() -> Unit)? = null,
 ) {
-    val player by PlayerConnection.player.collectAsState()
     val now by PlayerConnection.nowPlaying.collectAsState()
-    val settingsClick by rememberUpdatedState(onSettings)
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
-        AndroidView(
-            factory = { ctx ->
-                PlayerView(ctx).apply {
-                    setShowNextButton(true)
-                    setShowPreviousButton(true)
-                    setShowShuffleButton(false)
-                    setShowSubtitleButton(true)
-                    resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-                    setBackgroundColor(android.graphics.Color.BLACK)
-                    // The gear opens Streamo's own menu (quality + speed) instead of the default one.
-                    findViewById<android.view.View>(androidx.media3.ui.R.id.exo_settings)
-                        ?.setOnClickListener { settingsClick?.invoke() }
-                    // Seek bar in the logo's ember orange.
-                    findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
-                        setPlayedColor(Ember.toArgb())
-                        setScrubberColor(Ember.toArgb())
-                        setBufferedColor(Parchment.copy(alpha = 0.45f).toArgb())
-                    }
-                }
-            },
-            update = { view ->
-                view.player = player
-                view.useController = controls
-                view.keepScreenOn = now?.isPlaying == true // screen stays on while watching
-                view.setFullscreenButtonState(fullscreen)
-                if (onFullscreen != null) view.setFullscreenButtonClickListener { onFullscreen() }
-            },
-            onRelease = { it.player = null },
-            modifier = Modifier.fillMaxSize(),
-        )
+        Platform.ui.VideoView(Modifier.fillMaxSize(), controls, fullscreen, onFullscreen, onSettings)
         val state = now
         if (state?.error != null) {
             Column(
@@ -224,7 +184,7 @@ fun WatchScreen(
                     if (expanded && !desc.isNullOrBlank()) {
                         Spacer(Modifier.height(8.dp))
                         Text(
-                            android.text.Html.fromHtml(desc, android.text.Html.FROM_HTML_MODE_COMPACT).toString().trim(),
+                            htmlToText(desc).trim(),
                             style = MaterialTheme.typography.bodySmall,
                             modifier = Modifier.background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(10.dp)).padding(10.dp),
                         )
@@ -302,7 +262,6 @@ private fun ChannelRow(
 
 @Composable
 private fun ActionRow(now: NowPlaying, details: Loader<com.streamo.app.data.VideoDetails>, onPip: () -> Unit) {
-    val context = LocalContext.current
     var saving by remember { mutableStateOf(false) }
     var downloading by remember { mutableStateOf(false) }
     val video = (details.state as? Load.Done)?.value?.item ?: now.video
@@ -318,11 +277,7 @@ private fun ActionRow(now: NowPlaying, details: Loader<com.streamo.app.data.Vide
     ) {
         if (likes >= 0) Pill(Icons.Outlined.ThumbUp, formatCount(likes, "").trim()) {}
         Pill(Icons.Default.Share, "Share") {
-            val send = Intent(Intent.ACTION_SEND)
-                .setType("text/plain")
-                .putExtra(Intent.EXTRA_SUBJECT, now.video.title)
-                .putExtra(Intent.EXTRA_TEXT, "${now.video.title}\n${now.video.url}")
-            context.startActivity(Intent.createChooser(send, "Share video"))
+            Platform.ui.share(now.video.title, "${now.video.title}\n${now.video.url}")
         }
         Pill(Icons.AutoMirrored.Filled.PlaylistAdd, "Save") { saving = true }
         Pill(Icons.Default.Download, "Download") { downloading = true }
@@ -413,12 +368,10 @@ private fun Pill(icon: androidx.compose.ui.graphics.vector.ImageVector, label: S
 /** Bar above the bottom navigation while a video plays and you browse elsewhere. */
 @Composable
 fun MiniPlayer(now: NowPlaying, onExpand: () -> Unit) {
-    val player by PlayerConnection.player.collectAsState()
     var progress by remember { mutableFloatStateOf(0f) }
-    LaunchedEffect(player) {
+    LaunchedEffect(Unit) {
         while (true) {
-            val p: Player? = player
-            if (p != null && p.duration > 0) progress = p.currentPosition.toFloat() / p.duration
+            PlayerConnection.progress()?.let { progress = it }
             delay(500)
         }
     }
