@@ -22,4 +22,4 @@ workflows:
           chmod +x gradlew
           xcodebuild -project iosApp/Streamo.xcodeproj -scheme Streamo \
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
-            -configuration Debug CODE_SIGNING_ALLOWED=NO build
+            -configuration Debug ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
