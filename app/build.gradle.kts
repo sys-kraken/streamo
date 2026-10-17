@@ -72,6 +72,8 @@ kotlin {
 dependencies {
     coreLibraryDesugaring(libs.desugar)
 
+    implementation(project(":shared"))
+
     implementation(libs.androidx.core)
     implementation(libs.androidx.profileinstaller)
     implementation(libs.androidx.activity.compose)

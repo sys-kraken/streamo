@@ -1,0 +1,25 @@
+# Codemagic builds the iOS app on a Mac. This workflow only checks that it compiles
+# (simulator build, no signing, no Apple account needed). Signed builds come later.
+workflows:
+  ios-check:
+    name: iOS compile check
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      java: 17
+      xcode: latest
+    triggering:
+      events: [push]
+      branch_patterns:
+        - pattern: streamo-ios
+    scripts:
+      - name: Generate Xcode project
+        script: |
+          brew install xcodegen
+          cd iosApp && xcodegen generate
+      - name: Build for the iOS simulator
+        script: |
+          chmod +x gradlew
+          xcodebuild -project iosApp/Streamo.xcodeproj -scheme Streamo \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug CODE_SIGNING_ALLOWED=NO build
