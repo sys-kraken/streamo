@@ -8,14 +8,16 @@ import coil3.request.crossfade
 import com.streamo.app.IosDownloadRunner
 import com.streamo.app.IosPlatformUi
 import com.streamo.app.IosPlayer
-import com.streamo.app.IosVideoSource
 import com.streamo.app.Platform
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.UserDefaultsStorage
+import com.streamo.app.data.youtube.InnerTubeSource
 import com.streamo.app.download.Downloads
+import com.streamo.app.regionCode
 import com.streamo.app.ui.AppState
 import com.streamo.app.ui.StreamoRoot
 import com.streamo.app.ui.StreamoTheme
+import io.ktor.client.HttpClient
 import platform.UIKit.UIViewController
 
 private var started = false
@@ -24,7 +26,8 @@ private var started = false
 private fun startOnce() {
     if (started) return
     started = true
-    Platform.videos = IosVideoSource
+    // Finds videos by talking to YouTube directly (Android uses NewPipe instead).
+    Platform.videos = InnerTubeSource(HttpClient(), ::regionCode)
     Platform.player = IosPlayer
     Platform.ui = IosPlatformUi()
     LibraryStore.init(UserDefaultsStorage())

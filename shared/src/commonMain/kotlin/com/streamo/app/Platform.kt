@@ -21,6 +21,9 @@ class ComingSoon(message: String) : Exception(message)
 /** Milliseconds since 1970, like System.currentTimeMillis(). */
 expect fun nowMillis(): Long
 
+/** The phone's country as a two-letter code ("US", "PH"), or "" if unknown. */
+expect fun regionCode(): String
+
 /** Writes an error to the system log (Logcat on Android). */
 expect fun logError(message: String, error: Throwable)
 

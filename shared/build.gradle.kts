@@ -14,6 +14,8 @@ kotlin {
         minSdk = 26
         // Shared images (the logo) are packed into the Android app too.
         androidResources.enable = true
+        // Plain JVM tests (src/androidHostTest), e.g. the YouTube client against live YouTube.
+        withHostTest { isReturnDefaultValues = true }
     }
 
     listOf(iosArm64(), iosSimulatorArm64()).forEach { target ->
@@ -44,6 +46,10 @@ kotlin {
         androidMain.dependencies {
             api(libs.ktor.client.okhttp)
         }
+        getByName("androidHostTest").dependencies {
+            implementation(kotlin("test"))
+            implementation(libs.ktor.client.okhttp)
+        }
         iosMain.dependencies {
             implementation(libs.ktor.client.darwin)
             implementation(libs.coil.ktor)
@@ -53,4 +59,13 @@ kotlin {
 
 compose.resources {
     packageOfResClass = "com.streamo.app.resources"
+}
+
+// Show what the tests print (they report what they found on YouTube).
+tasks.withType<Test>().configureEach {
+    testLogging {
+        showStandardStreams = true
+        events("passed", "failed")
+        exceptionFormat = org.gradle.api.tasks.testing.logging.TestExceptionFormat.FULL
+    }
 }
