@@ -12,6 +12,9 @@ import coil3.request.crossfade
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.OkHttpDownloader
 import com.streamo.app.data.SponsorBlock
+import com.streamo.app.data.init
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
@@ -61,6 +64,6 @@ class StreamoApp : Application(), SingletonImageLoader.Factory {
                 .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))
                 .build()
         }
-        val sponsorBlock by lazy { SponsorBlock(http) }
+        val sponsorBlock by lazy { SponsorBlock(HttpClient(OkHttp) { engine { preconfigured = http } }) }
     }
 }

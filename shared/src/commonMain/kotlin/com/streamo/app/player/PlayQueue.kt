@@ -8,7 +8,7 @@ import kotlinx.coroutines.flow.asStateFlow
 /**
  * The playlist being played, if any. The player only ever holds the current video and the
  * next one; when a playlist is active, "next" comes from here instead of YouTube's suggestions.
- * Shared by the app and [PlaybackService] (same process).
+ * Shared by the app and the playback service (same process).
  */
 object PlayQueue {
     data class Queue(val title: String, val videos: List<VideoItem>, val index: Int) {

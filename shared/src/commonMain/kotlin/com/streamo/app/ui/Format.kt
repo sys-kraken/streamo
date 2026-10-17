@@ -1,7 +1,5 @@
 package com.streamo.app.ui
 
-import java.util.Locale
-
 fun formatCount(n: Long, unit: String): String {
     if (n < 0) return ""
     val text = when {
@@ -13,17 +11,22 @@ fun formatCount(n: Long, unit: String): String {
     return "$text $unit"
 }
 
-private fun trim(v: Double): String =
-    if (v >= 10) v.toLong().toString() else String.format(Locale.US, "%.1f", v).removeSuffix(".0")
+/** One decimal, rounded half up, without a trailing ".0" (1.25 -> "1.3", 2.0 -> "2"). */
+private fun trim(v: Double): String {
+    if (v >= 10) return v.toLong().toString()
+    val tenths = (v * 10 + 0.5).toLong()
+    return "${tenths / 10}.${tenths % 10}".removeSuffix(".0")
+}
 
 fun formatDuration(seconds: Long): String {
     if (seconds <= 0) return ""
     val h = seconds / 3600
     val m = (seconds % 3600) / 60
     val s = seconds % 60
-    return if (h > 0) String.format(Locale.US, "%d:%02d:%02d", h, m, s)
-    else String.format(Locale.US, "%d:%02d", m, s)
+    return if (h > 0) "$h:${two(m)}:${two(s)}" else "$m:${two(s)}"
 }
+
+private fun two(n: Long) = n.toString().padStart(2, '0')
 
 fun subtitle(channel: String, views: Long, uploaded: String?, live: Boolean = false): String =
     listOfNotNull(

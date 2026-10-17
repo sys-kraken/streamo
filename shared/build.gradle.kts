@@ -29,6 +29,17 @@ kotlin {
             implementation(libs.cmp.foundation)
             implementation(libs.cmp.ui)
             implementation(libs.cmp.material3)
+
+            api(libs.coroutines.core)
+            api(libs.serialization.json)
+            api(libs.ktor.client.core)
+            implementation(libs.okio)
+        }
+        androidMain.dependencies {
+            api(libs.ktor.client.okhttp)
+        }
+        iosMain.dependencies {
+            implementation(libs.ktor.client.darwin)
         }
     }
 }

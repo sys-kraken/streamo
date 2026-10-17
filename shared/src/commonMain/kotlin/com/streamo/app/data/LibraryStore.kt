@@ -1,14 +1,24 @@
 package com.streamo.app.data
 
-import android.content.Context
-import android.content.SharedPreferences
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlin.uuid.ExperimentalUuidApi
+import kotlin.uuid.Uuid
+
+/** Where the library is saved: SharedPreferences on Android, NSUserDefaults on iOS. */
+interface KeyValueStorage {
+    fun get(key: String): String?
+    fun put(key: String, value: String)
+}
 
 @Serializable
 data class Settings(
@@ -24,7 +34,7 @@ data class Settings(
 object LibraryStore {
     private const val MAX_HISTORY = 300
     private val json = Json { ignoreUnknownKeys = true }
-    private lateinit var prefs: SharedPreferences
+    private lateinit var storage: KeyValueStorage
 
     private val _subscriptions = MutableStateFlow<List<ChannelRef>>(emptyList())
     val subscriptions: StateFlow<List<ChannelRef>> = _subscriptions.asStateFlow()
@@ -38,8 +48,8 @@ object LibraryStore {
     private val _settings = MutableStateFlow(Settings())
     val settings: StateFlow<Settings> = _settings.asStateFlow()
 
-    fun init(context: Context) {
-        prefs = context.getSharedPreferences("library", Context.MODE_PRIVATE)
+    fun init(storage: KeyValueStorage) {
+        this.storage = storage
         _subscriptions.value = read("subscriptions") ?: emptyList()
         _history.value = read("history") ?: emptyList()
         _settings.value = read("settings") ?: Settings()
@@ -68,8 +78,9 @@ object LibraryStore {
 
     // ---------- Playlists ----------
 
+    @OptIn(ExperimentalUuidApi::class)
     fun createPlaylist(name: String, videos: List<VideoItem> = emptyList()): String {
-        val id = java.util.UUID.randomUUID().toString()
+        val id = Uuid.random().toString()
         editPlaylists { it + LocalPlaylist(id, name.trim().ifEmpty { "My playlist" }, videos.distinctBy { v -> v.url }) }
         return id
     }
@@ -102,12 +113,12 @@ object LibraryStore {
     }
 
     private inline fun <reified T> read(key: String): T? =
-        prefs.getString(key, null)?.let { runCatching { json.decodeFromString<T>(it) }.getOrNull() }
+        storage.get(key)?.let { runCatching { json.decodeFromString<T>(it) }.getOrNull() }
 
-    /** One background thread does all saving, in order, so the screen never waits on it. */
-    private val saver = java.util.concurrent.Executors.newSingleThreadExecutor()
+    /** All saving runs in the background one at a time, in order, so the screen never waits on it. */
+    private val saver = CoroutineScope(SupervisorJob() + Dispatchers.Default.limitedParallelism(1))
 
     private inline fun <reified T> write(key: String, value: T) {
-        saver.execute { prefs.edit().putString(key, json.encodeToString(value)).apply() }
+        saver.launch { storage.put(key, json.encodeToString(value)) }
     }
 }

@@ -34,11 +34,13 @@ class StreamSourceFactory(context: Context, private val dataSource: DataSource.F
             ?: return fallback.createMediaSource(mediaItem)
 
         if (streams.isHls) return hls.createMediaSource(mediaItem)
-        if (streams.videoUrl == null || streams.audioUrl == null) return progressive.createMediaSource(mediaItem)
+        val videoUrl = streams.videoUrl
+        val audioUrl = streams.audioUrl
+        if (videoUrl == null || audioUrl == null) return progressive.createMediaSource(mediaItem)
 
         // The picture source keeps the original item so titles/artwork stay attached to playback.
-        val video = progressive.createMediaSource(mediaItem.buildUpon().setUri(streams.videoUrl).build())
-        val audio = progressive.createMediaSource(MediaItem.fromUri(streams.audioUrl))
+        val video = progressive.createMediaSource(mediaItem.buildUpon().setUri(videoUrl).build())
+        val audio = progressive.createMediaSource(MediaItem.fromUri(audioUrl))
         return MergingMediaSource(/* adjustPeriodTimeOffsets = */ true, /* clipDurations = */ true, video, audio)
     }
 
