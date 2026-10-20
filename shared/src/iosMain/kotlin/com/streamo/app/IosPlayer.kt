@@ -68,6 +68,7 @@ object IosPlayer : PlayerController {
     private var endObserver: Any? = null
     private val previous = ArrayDeque<VideoItem>()
     private val sponsorBlock by lazy { SponsorBlock(HttpClient()) }
+    private val loader = StreamLoader().also { it.onError = { message -> log(message) } }
 
     init {
         AVAudioSession.sharedInstance().setCategory(AVAudioSessionCategoryPlayback, error = null)
@@ -220,8 +221,10 @@ object IosPlayer : PlayerController {
         val hls = streams.combinedUrl
         val video = streams.videoUrl
         val audio = streams.audioUrl
+        val live = _nowPlaying.value?.video?.isLive == true || (video == null && audio == null)
         return when {
-            hls != null && (streams.isHls || video == null || audio == null) -> AVPlayerItem.playerItemWithAsset(asset(hls)).apply {
+            // Live streams only come as HLS, which AVPlayer fetches itself.
+            hls != null && (live || video == null || audio == null) -> AVPlayerItem.playerItemWithAsset(asset(hls)).apply {
                 if (maxHeight > 0) preferredMaximumResolution = CGSizeMake(maxHeight * 16.0 / 9, maxHeight.toDouble())
             }
             video != null && audio != null -> AVPlayerItem.playerItemWithAsset(combine(video, audio))
@@ -231,8 +234,9 @@ object IosPlayer : PlayerController {
 
     /** One playable asset from YouTube's separate picture and sound files. */
     private suspend fun combine(videoUrl: String, audioUrl: String): AVAsset {
-        val videoTrack = track(asset(videoUrl), AVMediaTypeVideo, "picture")
-        val audioTrack = track(asset(audioUrl), AVMediaTypeAudio, "sound")
+        // Streamo downloads these files itself (see StreamLoader) and hands AVPlayer the bytes.
+        val videoTrack = track(loader.asset(videoUrl), AVMediaTypeVideo, "picture")
+        val audioTrack = track(loader.asset(audioUrl), AVMediaTypeAudio, "sound")
         val composition = AVMutableComposition.composition()
         composition.addMutableTrackWithMediaType(AVMediaTypeVideo, kCMPersistentTrackID_Invalid)
             ?.insertTimeRange(videoTrack.timeRange, ofTrack = videoTrack, atTime = CMTimeMake(0, 1), error = null)

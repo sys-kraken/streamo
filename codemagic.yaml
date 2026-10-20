@@ -61,6 +61,10 @@ workflows:
           xcrun simctl boot "$DEVICE" || true
           xcrun simctl bootstatus "$DEVICE" -b
           xcrun simctl install "$DEVICE" build/sim/Build/Products/Debug-iphonesimulator/Streamo.app
+          # The first launch on a freshly booted Simulator can be slow; open Streamo once before the timed runs.
+          xcrun simctl launch "$DEVICE" com.streamo.app
+          sleep 20
+          xcrun simctl terminate "$DEVICE" com.streamo.app || true
 
           # play <name> <video link> <seconds to jump to once it plays>
           play() {
@@ -81,6 +85,8 @@ workflows:
           play 2-separate-files "https://www.youtube.com/watch?v=yT_AfrHbAyA" 120
           play 3-sponsorblock "https://www.youtube.com/watch?v=AAtf5j5tp-8" 0
           grep -h "StreamoPlayer" test-results/*.log > test-results/summary.txt || true
+          # Crash reports, if Streamo crashed during a run.
+          cp ~/Library/Logs/DiagnosticReports/Streamo* test-results/ 2>/dev/null || true
           cat test-results/summary.txt
     artifacts:
       - test-results/**
