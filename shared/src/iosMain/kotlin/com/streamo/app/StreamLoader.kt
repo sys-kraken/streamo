@@ -87,7 +87,10 @@ internal class StreamLoader : NSObject(), AVAssetResourceLoaderDelegateProtocol 
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            onError("loading ${url.take(60)}…: ${e.message}")
+            // The link is tied to the IP that asked YouTube for it ("ip=" in the link); log it to compare.
+            val linkIp = Regex("[?&]ip=([^&]+)").find(url)?.groupValues?.get(1)
+            val itag = Regex("""[?&]itag=(\d+)""").find(url)?.groupValues?.get(1)
+            onError("loading itag=$itag linkIp=$linkIp: ${e.message}")
             request.finishLoadingWithError(
                 NSError.errorWithDomain("Streamo", 1, mapOf<Any?, Any?>(NSLocalizedDescriptionKey to (e.message ?: "Download failed")))
             )
@@ -105,7 +108,7 @@ internal class StreamLoader : NSObject(), AVAssetResourceLoaderDelegateProtocol 
                 val http = response as? NSHTTPURLResponse
                 if (body != null && http != null && http.statusCode in 200L..299L) cont.resume(body to http)
                 else cont.resumeWithException(
-                    IllegalStateException("HTTP ${http?.statusCode ?: "-"} ${error?.localizedDescription.orEmpty()}")
+                    IllegalStateException("HTTP ${http?.statusCode ?: "-"} for bytes=$from-$to ${error?.localizedDescription.orEmpty()}")
                 )
             }
             cont.invokeOnCancellation { task.cancel() }

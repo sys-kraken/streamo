@@ -19,6 +19,8 @@ import com.streamo.app.ui.AppState
 import com.streamo.app.ui.StreamoRoot
 import com.streamo.app.ui.StreamoTheme
 import io.ktor.client.HttpClient
+import io.ktor.client.request.get
+import io.ktor.client.statement.bodyAsText
 import kotlinx.coroutines.MainScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
@@ -73,6 +75,14 @@ private fun autoplayForTests(state: AppState) {
     fun arg(name: String) = args.indexOf(name).takeIf { it >= 0 }?.let { args.getOrNull(it + 1) }
     val url = arg("-StreamoAutoplay") ?: return
     IosPlayer.debugLog = true
+    // The public addresses this app reaches the internet from (YouTube ties stream links to one).
+    MainScope().launch {
+        val http = HttpClient()
+        for (service in listOf("https://api.ipify.org", "https://api64.ipify.org")) {
+            val ip = runCatching { http.get(service).bodyAsText() }.getOrElse { "failed: ${it.message}" }
+            println("StreamoPlayer: app IP via $service = $ip")
+        }
+    }
     state.play(VideoItem(url, "Loading…", "", null, null, 0, -1, null))
     val seek = arg("-StreamoSeek")?.toDoubleOrNull() ?: return
     MainScope().launch {

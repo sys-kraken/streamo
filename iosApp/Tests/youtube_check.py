@@ -57,16 +57,19 @@ def fetch(label, url, ua, byte_range="bytes=0-99999"):
 
 
 def main():
-    try:
-        ip = urllib.request.urlopen("https://api.ipify.org", timeout=10).read().decode()
-        print(f"This machine's public IP: {ip}")
-    except Exception as e:
-        print(f"Couldn't look up the public IP: {e}")
+    for service in ["https://api.ipify.org", "https://api64.ipify.org"]:
+        try:
+            ip = urllib.request.urlopen(service, timeout=10).read().decode()
+            print(f"This machine's public IP via {service}: {ip}")
+        except Exception as e:
+            print(f"Couldn't look up the public IP via {service}: {e}")
     for vid in VIDEOS:
         p = player(vid)
         status = p.get("playabilityStatus", {})
         streams = p.get("streamingData", {})
         formats = streams.get("adaptiveFormats", [])
+        link_ip = next((part[3:] for f in formats if 'url' in f for part in f['url'].split('&') if part.startswith('ip=')), None)
+        print(f"{vid}: links issued for ip={link_ip}")
         print(f"{vid}: playability={status.get('status')} {status.get('reason') or ''} "
               f"hls={'yes' if streams.get('hlsManifestUrl') else 'no'} formats={len(formats)}")
         video = next((f for f in formats if 'avc1' in f.get('mimeType', '') and f.get('height', 0) <= 720 and 'url' in f), None)
