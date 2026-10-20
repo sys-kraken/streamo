@@ -45,6 +45,10 @@ workflows:
             -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
             -configuration Debug ARCHS=arm64 CODE_SIGNING_ALLOWED=NO \
             -derivedDataPath build/sim build
+      - name: Check that this machine can download YouTube's video files
+        script: |
+          mkdir -p test-results
+          python3 iosApp/Tests/youtube_check.py 2>&1 | tee test-results/network-check.txt
       - name: Play test videos in the Simulator
         script: |
           mkdir -p test-results
