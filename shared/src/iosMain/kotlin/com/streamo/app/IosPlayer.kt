@@ -15,15 +15,16 @@ import com.streamo.app.ui.friendlyError
 import io.ktor.client.HttpClient
 import kotlinx.cinterop.ExperimentalForeignApi
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.IO
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.MainScope
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
 import platform.AVFAudio.*
 import platform.AVFoundation.*
 import platform.CoreGraphics.CGSizeMake
@@ -223,20 +224,15 @@ object IosPlayer : PlayerController {
             hls != null && (streams.isHls || video == null || audio == null) -> AVPlayerItem.playerItemWithAsset(asset(hls)).apply {
                 if (maxHeight > 0) preferredMaximumResolution = CGSizeMake(maxHeight * 16.0 / 9, maxHeight.toDouble())
             }
-            video != null && audio != null -> AVPlayerItem.playerItemWithAsset(withContext(Dispatchers.IO) { combine(video, audio) })
+            video != null && audio != null -> AVPlayerItem.playerItemWithAsset(combine(video, audio))
             else -> throw IllegalStateException("This video can't be played.")
         }
     }
 
-    /**
-     * One playable asset from YouTube's separate picture and sound files. Looking up the tracks
-     * reads the start of each file over the network, so this runs off the main thread.
-     */
-    private fun combine(videoUrl: String, audioUrl: String): AVAsset {
-        val videoTrack = asset(videoUrl).tracksWithMediaType(AVMediaTypeVideo).firstOrNull() as? AVAssetTrack
-            ?: throw IllegalStateException("Couldn't open the picture of this video.")
-        val audioTrack = asset(audioUrl).tracksWithMediaType(AVMediaTypeAudio).firstOrNull() as? AVAssetTrack
-            ?: throw IllegalStateException("Couldn't open the sound of this video.")
+    /** One playable asset from YouTube's separate picture and sound files. */
+    private suspend fun combine(videoUrl: String, audioUrl: String): AVAsset {
+        val videoTrack = track(asset(videoUrl), AVMediaTypeVideo, "picture")
+        val audioTrack = track(asset(audioUrl), AVMediaTypeAudio, "sound")
         val composition = AVMutableComposition.composition()
         composition.addMutableTrackWithMediaType(AVMediaTypeVideo, kCMPersistentTrackID_Invalid)
             ?.insertTimeRange(videoTrack.timeRange, ofTrack = videoTrack, atTime = CMTimeMake(0, 1), error = null)
@@ -244,6 +240,23 @@ object IosPlayer : PlayerController {
             ?.insertTimeRange(audioTrack.timeRange, ofTrack = audioTrack, atTime = CMTimeMake(0, 1), error = null)
         return composition
     }
+
+    /**
+     * The first [type] track of a network file. iOS reads the start of the file to find it,
+     * so this waits for Apple's asynchronous loading instead of blocking.
+     */
+    private suspend fun track(asset: AVURLAsset, type: String?, what: String): AVAssetTrack =
+        suspendCancellableCoroutine { cont ->
+            asset.loadTracksWithMediaType(type!!) { tracks, error ->
+                val track = tracks?.firstOrNull() as? AVAssetTrack
+                if (track != null) cont.resume(track)
+                else {
+                    val reason = error?.let { "${it.domain} ${it.code}: ${it.localizedDescription}" } ?: "no $what track"
+                    log("couldn't open the $what: $reason")
+                    cont.resumeWithException(IllegalStateException("Couldn't open the $what of this video ($reason)."))
+                }
+            }
+        }
 
     /** A network file opened the way the YouTube iPhone app does (its User-Agent). */
     private fun asset(url: String): AVURLAsset =
@@ -283,39 +296,57 @@ object IosPlayer : PlayerController {
     private fun durationSeconds(): Double =
         player.currentItem?.duration?.let { CMTimeGetSeconds(it) }?.takeIf { !it.isNaN() && it > 0 } ?: 0.0
 
-    /** Every half second: keeps [nowPlaying] current and skips sponsor segments. */
+    /**
+     * Every half second: keeps [nowPlaying] current and skips sponsor segments. A plain loop
+     * rather than AVPlayer's time observer, so it also notices a video that never starts.
+     */
     private fun watchTime() {
-        var lastLog = 0.0
-        player.addPeriodicTimeObserverForInterval(CMTimeMakeWithSeconds(0.5, 600), null) { _ ->
-            val now = _nowPlaying.value ?: return@addPeriodicTimeObserverForInterval
-            val item = player.currentItem
-            val playing = player.timeControlStatus == AVPlayerTimeControlStatusPlaying
-            val waiting = player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
-            val failed = item?.status == AVPlayerItemStatusFailed
-            if (failed && now.error == null) {
-                log("failed: ${item?.error?.localizedDescription}")
-            }
-            _nowPlaying.value = now.copy(
-                isPlaying = playing,
-                isBuffering = (waiting || item == null) && !failed,
-                started = now.started || playing,
-                error = if (failed) now.error ?: "Couldn't play this video. Tap to retry." else now.error,
-                speed = speed,
-            )
-            val pos = positionSeconds()
-            if (playing) {
-                val ms = (pos * 1000).toLong()
-                segments.firstOrNull { ms >= it.startMs && ms < it.endMs - 500 }?.let { hit ->
-                    log("skipped ${hit.category} at ${pos.toInt()}s")
-                    seekTo(hit.endMs / 1000.0)
-                    Platform.ui.toast("Skipped ${hit.category}")
-                }
-            }
-            if (debugLog && (pos - lastLog >= 2 || pos < lastLog)) {
-                lastLog = pos
-                log("state playing=$playing waiting=$waiting failed=$failed pos=${pos.toInt()}s/${durationSeconds().toInt()}s")
+        scope.launch {
+            var ticks = 0
+            while (true) {
+                tick(logState = debugLog && ticks++ % 4 == 0)
+                delay(500)
             }
         }
+    }
+
+    private fun tick(logState: Boolean) {
+        val now = _nowPlaying.value ?: return
+        val item = player.currentItem
+        val playing = player.timeControlStatus == AVPlayerTimeControlStatusPlaying
+        val waiting = player.timeControlStatus == AVPlayerTimeControlStatusWaitingToPlayAtSpecifiedRate
+        val failed = item?.status == AVPlayerItemStatusFailed
+        if (failed && now.error == null) log("failed: ${itemProblem(item)}")
+        _nowPlaying.value = now.copy(
+            isPlaying = playing,
+            isBuffering = (waiting || item == null) && !failed,
+            started = now.started || playing,
+            error = if (failed) now.error ?: "Couldn't play this video. Tap to retry." else now.error,
+            speed = speed,
+        )
+        val pos = positionSeconds()
+        if (playing) {
+            val ms = (pos * 1000).toLong()
+            segments.firstOrNull { ms >= it.startMs && ms < it.endMs - 500 }?.let { hit ->
+                log("skipped ${hit.category} at ${pos.toInt()}s")
+                seekTo(hit.endMs / 1000.0)
+                Platform.ui.toast("Skipped ${hit.category}")
+            }
+        }
+        if (logState && item != null) {
+            log(
+                "state playing=$playing waiting=${player.reasonForWaitingToPlay} itemStatus=${item.status} " +
+                    "pos=${pos.toInt()}s/${durationSeconds().toInt()}s problem=${itemProblem(item)}"
+            )
+        }
+    }
+
+    /** What AVPlayer says went wrong with [item], for the log. */
+    private fun itemProblem(item: AVPlayerItem?): String? {
+        val error = item?.error?.let { "${it.domain} ${it.code}: ${it.localizedDescription} ${it.localizedFailureReason.orEmpty()}" }
+        val lastEvent = item?.errorLog()?.events?.lastOrNull() as? AVPlayerItemErrorLogEvent
+        val logged = lastEvent?.let { "${it.errorStatusCode} ${it.errorDomain} ${it.errorComment.orEmpty()} ${it.URI.orEmpty().take(80)}" }
+        return listOfNotNull(error, logged).joinToString(" | ").ifEmpty { null }
     }
 
     private fun updateLockScreen() {
