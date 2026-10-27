@@ -83,7 +83,13 @@ private fun autoplayForTests(state: AppState) {
             println("StreamoPlayer: app IP via $service = $ip")
         }
     }
-    state.play(VideoItem(url, "Loading…", "", null, null, 0, -1, null))
+    if (args.contains("-StreamoTestFile")) {
+        // A non-YouTube file, to test the player itself (see IosPlayer.playTestFile).
+        state.watchExpanded = true
+        IosPlayer.playTestFile(VideoItem(url, "Test file", "Google sample videos", null, null, 0, -1, null), url)
+    } else {
+        state.play(VideoItem(url, "Loading…", "", null, null, 0, -1, null))
+    }
     val seek = arg("-StreamoSeek")?.toDoubleOrNull() ?: return
     MainScope().launch {
         IosPlayer.nowPlaying.first { it?.started == true }

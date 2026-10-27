@@ -79,6 +79,26 @@ def main():
                 fetch(f"picture {video['itag']} ({ua_name})", video["url"], ua)
             if audio:
                 fetch(f"sound {audio['itag']} ({ua_name})", audio["url"], ua)
+        # YouTube may allow the first request for a link and refuse the rest (data-centre IPs
+        # without a "PO token"), so also fetch several pieces in a row like the player does.
+        for label, f in [("picture", video), ("sound", audio)]:
+            if not f:
+                continue
+            size = int(f.get("contentLength", "0") or 0)
+            results = []
+            for start in range(0, min(size, 12 * 1024 * 1024), 2 * 1024 * 1024):
+                status = "?"
+                try:
+                    req = urllib.request.Request(f["url"], headers={"User-Agent": IOS_UA, "Range": f"bytes={start}-{start + 2 * 1024 * 1024 - 1}"})
+                    with urllib.request.urlopen(req, timeout=20) as r:
+                        r.read()
+                        status = r.status
+                except urllib.error.HTTPError as e:
+                    status = e.code
+                except Exception as e:
+                    status = type(e).__name__
+                results.append(f"{start // (1024 * 1024)}MB:{status}")
+            print(f"  {label} {f['itag']} pieces in a row: {' '.join(results)}")
         if streams.get("hlsManifestUrl"):
             master = fetch("HLS playlist", streams["hlsManifestUrl"], IOS_UA, byte_range=None).decode(errors="replace")
             variants = [line for line in master.splitlines() if line.startswith("http")]

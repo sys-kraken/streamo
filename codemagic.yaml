@@ -66,12 +66,12 @@ workflows:
           sleep 20
           xcrun simctl terminate "$DEVICE" com.streamo.app || true
 
-          # play <name> <video link> <seconds to jump to once it plays>
+          # play <name> <video link> <seconds to jump to once it plays> [extra launch arguments]
           play() {
             xcrun simctl io "$DEVICE" recordVideo --codec h264 --force "test-results/$1.mp4" &
             REC=$!
             xcrun simctl launch --console-pty --terminate-running-process "$DEVICE" com.streamo.app \
-              -StreamoAutoplay "$2" -StreamoSeek "$3" > "test-results/$1.log" 2>&1 &
+              -StreamoAutoplay "$2" -StreamoSeek "$3" $4 > "test-results/$1.log" 2>&1 &
             APP=$!
             sleep 20
             xcrun simctl io "$DEVICE" screenshot "test-results/$1-20s.png"
@@ -84,6 +84,8 @@ workflows:
           play 1-hls "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 60
           play 2-separate-files "https://www.youtube.com/watch?v=yT_AfrHbAyA" 120
           play 3-sponsorblock "https://www.youtube.com/watch?v=AAtf5j5tp-8" 0
+          # Not YouTube: Google's public sample video, to test the player without YouTube's data-centre blocking.
+          play 4-public-file "https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4" 120 -StreamoTestFile
           grep -h "StreamoPlayer" test-results/*.log > test-results/summary.txt || true
           # Crash reports, if Streamo crashed during a run.
           cp ~/Library/Logs/DiagnosticReports/Streamo* test-results/ 2>/dev/null || true

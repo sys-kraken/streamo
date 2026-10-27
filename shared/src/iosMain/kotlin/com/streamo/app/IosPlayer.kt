@@ -151,6 +151,29 @@ object IosPlayer : PlayerController {
         return if (total > 0) (positionSeconds() / total).toFloat() else null
     }
 
+    /**
+     * For the Simulator test: plays any network file through the same path as YouTube videos
+     * (Streamo's downloader, picture and sound combined), without YouTube's checks in the way.
+     */
+    fun playTestFile(video: VideoItem, fileUrl: String) {
+        PlayQueue.clear()
+        loadJob?.cancel()
+        _nowPlaying.value = NowPlaying(video)
+        loadJob = scope.launch {
+            try {
+                val item = AVPlayerItem.playerItemWithAsset(combine(fileUrl, fileUrl))
+                current = Loaded(video, StreamChoice(fileUrl, fileUrl, null, false, 0, emptyList()), emptyList())
+                log("loaded test file ${video.title}")
+                show(item, startAt = 0.0)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                log("test file failed: ${e.message}")
+                _nowPlaying.value = _nowPlaying.value?.copy(error = "${e.message} Tap to retry.", isBuffering = false)
+            }
+        }
+    }
+
     /** Jumps to [seconds] into the current video. */
     fun seekTo(seconds: Double) {
         player.seekToTime(CMTimeMakeWithSeconds(seconds, 600))
