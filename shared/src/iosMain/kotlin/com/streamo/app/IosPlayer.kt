@@ -233,7 +233,16 @@ object IosPlayer : PlayerController {
         endObserver?.let { NSNotificationCenter.defaultCenter.removeObserver(it) }
         endObserver = NSNotificationCenter.defaultCenter.addObserverForName(
             AVPlayerItemDidPlayToEndTimeNotification, item, NSOperationQueue.mainQueue,
-        ) { _ -> playNext() }
+        ) { _ ->
+            // AVPlayer also "reaches the end" when the rest of the file can't be downloaded;
+            // only move on when the video really played to its end.
+            val duration = durationSeconds()
+            if (duration > 0 && positionSeconds() >= duration - 3) playNext()
+            else {
+                log("stopped early at ${positionSeconds().toInt()}s of ${duration.toInt()}s")
+                _nowPlaying.value = _nowPlaying.value?.copy(error = "The video stopped loading. Tap to retry.", isBuffering = false)
+            }
+        }
         player.replaceCurrentItemWithPlayerItem(item)
         if (startAt > 0) seekTo(startAt)
         resume()
@@ -244,10 +253,10 @@ object IosPlayer : PlayerController {
         val hls = streams.combinedUrl
         val video = streams.videoUrl
         val audio = streams.audioUrl
-        val live = _nowPlaying.value?.video?.isLive == true || (video == null && audio == null)
         return when {
-            // Live streams only come as HLS, which AVPlayer fetches itself.
-            hls != null && (live || video == null || audio == null) -> AVPlayerItem.playerItemWithAsset(asset(hls)).apply {
+            // HLS whenever YouTube offers it (always for live streams): AVPlayer fetches it itself,
+            // and its pieces kept loading in the Simulator test where the separate files got 403s.
+            hls != null -> AVPlayerItem.playerItemWithAsset(asset(hls)).apply {
                 if (maxHeight > 0) preferredMaximumResolution = CGSizeMake(maxHeight * 16.0 / 9, maxHeight.toDouble())
             }
             video != null && audio != null -> AVPlayerItem.playerItemWithAsset(combine(video, audio))
