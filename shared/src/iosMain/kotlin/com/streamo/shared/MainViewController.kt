@@ -8,7 +8,9 @@ import coil3.request.crossfade
 import com.streamo.app.IosDownloadRunner
 import com.streamo.app.IosPlatformUi
 import com.streamo.app.IosPlayer
+import com.streamo.app.PlainPlayerTest
 import com.streamo.app.Platform
+import com.streamo.app.iosLog
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.UserDefaultsStorage
 import com.streamo.app.data.VideoItem
@@ -80,8 +82,13 @@ private fun autoplayForTests(state: AppState) {
         val http = HttpClient()
         for (service in listOf("https://api.ipify.org", "https://api64.ipify.org")) {
             val ip = runCatching { http.get(service).bodyAsText() }.getOrElse { "failed: ${it.message}" }
-            println("StreamoPlayer: app IP via $service = $ip")
+            iosLog("StreamoPlayer: app IP via $service = ${ip.take(200)}")
         }
+    }
+    if (args.contains("-StreamoPlainPlayer")) {
+        // A bare AVPlayer with none of Streamo's player code (see PlainPlayerTest).
+        PlainPlayerTest.run(url)
+        return
     }
     if (args.contains("-StreamoTestFile")) {
         // A non-YouTube file, to test the player itself (see IosPlayer.playTestFile).
@@ -94,7 +101,7 @@ private fun autoplayForTests(state: AppState) {
     MainScope().launch {
         IosPlayer.nowPlaying.first { it?.started == true }
         delay(3_000)
-        println("StreamoPlayer: test seek to ${seek.toInt()}s")
+        iosLog("StreamoPlayer: test seek to ${seek.toInt()}s")
         IosPlayer.seekTo(seek)
     }
 }

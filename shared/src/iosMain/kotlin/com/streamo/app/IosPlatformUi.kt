@@ -87,7 +87,7 @@ class IosPlatformUi : PlatformUi {
     }
 
     override fun toast(message: String, long: Boolean) {
-        println("Streamo: $message")
+        iosLog("Streamo: $message")
     }
 
     @Composable

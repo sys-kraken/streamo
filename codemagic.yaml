@@ -70,6 +70,9 @@ workflows:
           play() {
             xcrun simctl io "$DEVICE" recordVideo --codec h264 --force "test-results/$1.mp4" &
             REC=$!
+            # The device log too, in case the app's console output gets lost.
+            xcrun simctl spawn "$DEVICE" log stream --style compact --predicate 'eventMessage CONTAINS "Streamo"' > "test-results/$1-device.log" 2>&1 &
+            LOG=$!
             xcrun simctl launch --console-pty --terminate-running-process "$DEVICE" com.streamo.app \
               -StreamoAutoplay "$2" -StreamoSeek "$3" $4 > "test-results/$1.log" 2>&1 &
             APP=$!
@@ -78,6 +81,7 @@ workflows:
             sleep 15
             xcrun simctl io "$DEVICE" screenshot "test-results/$1-35s.png"
             kill -INT $REC; wait $REC || true
+            kill $LOG 2>/dev/null || true
             xcrun simctl terminate "$DEVICE" com.streamo.app || true
             kill $APP 2>/dev/null || true
           }
@@ -87,7 +91,11 @@ workflows:
           # Not YouTube: a public sample video, to test the player without YouTube's blocking.
           # (Google's gtv-videos-bucket copy now answers 403 to everyone.)
           play 4-public-file "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4" 120 -StreamoTestFile
-          grep -h "StreamoPlayer" test-results/*.log > test-results/summary.txt || true
+          # A bare AVPlayer with none of Streamo's player code: if these don't play either, it's the Simulator.
+          play 5-plain-hls "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8" 0 -StreamoPlainPlayer
+          play 6-plain-file "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4" 0 -StreamoPlainPlayer
+          grep -h "StreamoPlayer" $(ls test-results/*.log | grep -v -- '-device.log') > test-results/summary.txt || true
+          grep -h "StreamoPlayer" test-results/*-device.log > test-results/summary-device.txt || true
           # Crash reports, if Streamo crashed during a run.
           cp ~/Library/Logs/DiagnosticReports/Streamo* test-results/ 2>/dev/null || true
           cat test-results/summary.txt

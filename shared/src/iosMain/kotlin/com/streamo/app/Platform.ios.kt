@@ -2,6 +2,7 @@ package com.streamo.app
 
 import platform.Foundation.NSDate
 import platform.Foundation.NSLocale
+import platform.Foundation.NSLog
 import platform.Foundation.countryCode
 import platform.Foundation.currentLocale
 import platform.Foundation.timeIntervalSince1970
@@ -11,7 +12,15 @@ actual fun nowMillis(): Long = (NSDate().timeIntervalSince1970 * 1000).toLong()
 actual fun regionCode(): String = NSLocale.currentLocale.countryCode.orEmpty()
 
 actual fun logError(message: String, error: Throwable) {
-    println("Streamo: $message: $error")
+    iosLog("Streamo: $message: $error")
+}
+
+/**
+ * One line to the device log. NSLog rather than println: println output sat in a buffer and was
+ * lost when the Simulator test stopped the app, so most player state lines never showed up.
+ */
+fun iosLog(line: String) {
+    NSLog("%@", line)
 }
 
 // Ktor on iOS reports network problems as Darwin errors; recognised properly once iOS loads videos.

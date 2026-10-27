@@ -434,6 +434,6 @@ object IosPlayer : PlayerController {
     }
 
     private fun log(message: String) {
-        if (debugLog) println("StreamoPlayer: $message")
+        if (debugLog) iosLog("StreamoPlayer: $message")
     }
 }
