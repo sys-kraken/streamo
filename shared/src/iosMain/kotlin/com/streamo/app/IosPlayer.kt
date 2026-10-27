@@ -340,7 +340,9 @@ object IosPlayer : PlayerController {
         scope.launch {
             var ticks = 0
             while (true) {
-                tick(logState = debugLog && ticks++ % 4 == 0)
+                // A failing tick must not end the loop; the Simulator test only saw one state line.
+                runCatching { tick(logState = debugLog && ticks++ % 4 == 0) }
+                    .onFailure { log("tick failed: ${it::class.simpleName}: ${it.message}") }
                 delay(500)
             }
         }
@@ -372,7 +374,7 @@ object IosPlayer : PlayerController {
         if (logState && item != null) {
             log(
                 "state playing=$playing waiting=${player.reasonForWaitingToPlay} itemStatus=${item.status} " +
-                    "pos=${pos.toInt()}s/${durationSeconds().toInt()}s problem=${itemProblem(item)}"
+                    "pos=${pos.toInt()}s/${durationSeconds().toInt()}s problem=${itemProblem(item)} fetched=${itemFetched(item)}"
             )
         }
     }
@@ -383,6 +385,13 @@ object IosPlayer : PlayerController {
         val lastEvent = item?.errorLog()?.events?.lastOrNull() as? AVPlayerItemErrorLogEvent
         val logged = lastEvent?.let { "${it.errorStatusCode} ${it.errorDomain} ${it.errorComment.orEmpty()} ${it.URI.orEmpty().take(80)}" }
         return listOfNotNull(error, logged).joinToString(" | ").ifEmpty { null }
+    }
+
+    /** What AVPlayer has downloaded for [item] so far (HLS playlists and pieces), for the log. */
+    private fun itemFetched(item: AVPlayerItem): String? {
+        val event = item.accessLog()?.events?.lastOrNull() as? AVPlayerItemAccessLogEvent ?: return null
+        return "${event.numberOfMediaRequests} requests ${event.numberOfBytesTransferred / 1024}KB " +
+            "bitrate=${event.indicatedBitrate.toLong()} ${event.URI.orEmpty().take(80)}"
     }
 
     private fun updateLockScreen() {
