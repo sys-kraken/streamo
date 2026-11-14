@@ -5,6 +5,8 @@ import android.util.Log
 
 actual fun nowMillis(): Long = System.currentTimeMillis()
 
+actual fun utcOffsetMillis(atMs: Long): Long = java.util.TimeZone.getDefault().getOffset(atMs).toLong()
+
 actual fun regionCode(): String = java.util.Locale.getDefault().country
 
 actual fun logError(message: String, error: Throwable) {

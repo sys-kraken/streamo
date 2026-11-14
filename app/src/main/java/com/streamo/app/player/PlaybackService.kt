@@ -25,6 +25,7 @@ import com.streamo.app.MainActivity
 import com.streamo.app.R
 import com.streamo.app.StreamoApp
 import com.streamo.app.data.LibraryStore
+import com.streamo.app.data.Recommender
 import com.streamo.app.data.SkipSegment
 import com.streamo.app.data.VideoItem
 import com.streamo.app.data.NewPipeRepo
@@ -108,6 +109,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        savePosition(force = true)
         scope.cancel()
         session.release()
         player.release()
@@ -190,10 +192,20 @@ class PlaybackService : MediaSessionService() {
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             segments = emptyList()
+            // The previous video played to its end: remember it as fully watched.
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && player.currentMediaItemIndex > 0) {
+                val prev = player.getMediaItemAt(player.currentMediaItemIndex - 1).mediaId
+                lastDuration[prev]?.let { d -> LibraryStore.savePosition(prev, d, d, force = true) }
+            }
             val item = mediaItem ?: return
             PlayQueue.moveTo(item.mediaId)
             item.mediaMetadata.extras?.getString(EXTRA_VIDEO)?.let {
                 runCatching { json.decodeFromString<VideoItem>(it) }.getOrNull()?.let(LibraryStore::addToHistory)
+            }
+            // Start where you left off (not when switching quality or retrying, which keep their spot).
+            val resumeAt = LibraryStore.resumePositionMs(item.mediaId)
+            if (resumeAt > 0 && player.currentPosition < 3_000) {
+                player.seekTo(resumeAt)
             }
             scope.launch { queueUpNext(item.mediaId) }
             if (LibraryStore.settings.value.sponsorBlock) {
@@ -202,6 +214,18 @@ class PlaybackService : MediaSessionService() {
                     val found = StreamoApp.sponsorBlock.segments(url)
                     if (player.currentMediaItem?.mediaId == url) segments = found
                 }
+            }
+        }
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (!isPlaying) savePosition(force = true)
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (playbackState == Player.STATE_ENDED) {
+                val item = player.currentMediaItem ?: return
+                val d = player.duration.takeIf { it > 0 } ?: return
+                LibraryStore.savePosition(item.mediaId, d, d, force = true)
             }
         }
 
@@ -235,9 +259,11 @@ class PlaybackService : MediaSessionService() {
         val next = PlayQueue.nextAfter(url) ?: run {
             val details = runCatching { NewPipeRepo.details(url, LibraryStore.settings.value.maxHeight) }.getOrNull()
                 ?: return
-            val recent = LibraryStore.history.value.take(50).map { it.url }.toSet()
-            details.related.firstOrNull { it.url !in recent && !it.isLive }
-                ?: details.related.firstOrNull { it.url != url } ?: return
+            // Streamo's own pick, the same one shown first under "Up next": suits your history,
+            // skips videos watched recently and anything marked "Not interested".
+            val profile = com.streamo.app.data.currentTasteProfile()
+            Recommender.upNext(details.item, details.related, profile)
+                ?: details.related.firstOrNull { it.url != url && !it.isLive } ?: return
         }
         val resolved = runCatching { resolve(MediaItem.Builder().setMediaId(next.url).build()) }.getOrNull() ?: return
         if (player.currentMediaItem?.mediaId != url) return // the user switched videos meanwhile
@@ -251,10 +277,24 @@ class PlaybackService : MediaSessionService() {
 
     // ---------- SponsorBlock ----------
 
+    /** Last known length of each video, for marking it finished once the player has moved on. */
+    private val lastDuration = HashMap<String, Long>()
+    private var ticks = 0
+
+    private fun savePosition(force: Boolean = false) {
+        val item = player.currentMediaItem ?: return
+        val d = player.duration
+        if (d <= 0 || item.mediaId.isBlank()) return
+        lastDuration[item.mediaId] = d
+        LibraryStore.savePosition(item.mediaId, player.currentPosition, d, force)
+    }
+
     private fun startSponsorWatcher() {
         sponsorJob = scope.launch {
             while (isActive) {
                 delay(400)
+                // Every ~2 s, note how far into the video playback is (for resume and the thumbnail bar).
+                if (player.isPlaying && ++ticks % 5 == 0) savePosition()
                 if (!player.isPlaying || segments.isEmpty()) continue
                 val pos = player.currentPosition
                 val hit = segments.firstOrNull { pos >= it.startMs && pos < it.endMs - 500 } ?: continue

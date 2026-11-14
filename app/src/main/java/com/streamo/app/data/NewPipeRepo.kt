@@ -18,6 +18,8 @@ import org.schabi.newpipe.extractor.channel.ChannelInfo
 import org.schabi.newpipe.extractor.channel.ChannelInfoItem
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabInfo
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs
+import org.schabi.newpipe.extractor.comments.CommentsInfo
+import org.schabi.newpipe.extractor.comments.CommentsInfoItem
 import org.schabi.newpipe.extractor.feed.FeedInfo
 import org.schabi.newpipe.extractor.kiosk.KioskInfo
 import org.schabi.newpipe.extractor.localization.ContentCountry
@@ -396,6 +398,40 @@ object NewPipeRepo : VideoSource {
         val known = filter { it.height > 0 }.sortedBy { it.height }
         return (known.firstOrNull { it.height >= targetHeight } ?: known.lastOrNull() ?: first()).url
     }
+
+    // ---------- Comments ----------
+
+    override suspend fun comments(url: String): CommentsPage = io {
+        val info = CommentsInfo.getInfo(yt, url)
+        CommentsPage(
+            comments = info.relatedItems.map { it.toComment() },
+            next = info.nextPage?.let { CommentsNext(info, it) },
+            count = runCatching { info.commentsCount.toLong() }.getOrDefault(-1L),
+            disabled = info.isCommentsDisabled,
+        )
+    }
+
+    override suspend fun commentsMore(url: String, next: Any): CommentsPage = io {
+        val n = next as CommentsNext
+        val page = CommentsInfo.getMoreItems(yt, n.info, n.page)
+        CommentsPage(page.items.map { it.toComment() }, page.nextPage?.let { CommentsNext(n.info, it) })
+    }
+
+    private class CommentsNext(val info: CommentsInfo, val page: Page)
+
+    private fun CommentsInfoItem.toComment() = Comment(
+        id = commentId ?: url.orEmpty(),
+        author = uploaderName.orEmpty(),
+        authorAvatar = uploaderAvatars.pick(48),
+        authorUrl = uploaderUrl,
+        text = commentText?.content.orEmpty(),
+        likes = likeCount.toLong(),
+        published = textualUploadDate,
+        replyCount = replyCount.coerceAtLeast(0),
+        pinned = isPinned,
+        heartedByCreator = isHeartedByUploader,
+        byChannelOwner = isChannelOwner,
+    )
 
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
 }

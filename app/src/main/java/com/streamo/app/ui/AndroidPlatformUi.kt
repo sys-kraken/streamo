@@ -50,11 +50,12 @@ class AndroidPlatformUi(context: Context) : PlatformUi {
                     // The gear opens Streamo's own menu (quality + speed) instead of the default one.
                     findViewById<android.view.View>(androidx.media3.ui.R.id.exo_settings)
                         ?.setOnClickListener { settingsClick?.invoke() }
-                    // Seek bar in the logo's ember orange.
+                    // White seek bar, matching the black-and-white look.
                     findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
-                        setPlayedColor(Ember.toArgb())
-                        setScrubberColor(Ember.toArgb())
-                        setBufferedColor(Parchment.copy(alpha = 0.45f).toArgb())
+                        setPlayedColor(android.graphics.Color.WHITE)
+                        setScrubberColor(android.graphics.Color.WHITE)
+                        setBufferedColor(0x73FFFFFF)
+                        setUnplayedColor(0x33FFFFFF)
                     }
                 }
             },

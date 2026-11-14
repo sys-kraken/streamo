@@ -159,12 +159,12 @@ private fun DownloadRow(entry: DownloadEntry, progress: Float?, onOpen: () -> Un
                     Status("$kind · ${((progress ?: 0f) * 100).toInt()}%")
                     Spacer(Modifier.height(4.dp))
                     LinearProgressIndicator(
-                        progress = { progress ?: 0f }, color = Ember,
+                        progress = { progress ?: 0f }, color = MaterialTheme.colorScheme.onBackground, trackColor = MaterialTheme.colorScheme.surfaceVariant,
                         modifier = Modifier.fillMaxWidth().height(4.dp),
                     )
                 }
                 DownloadEntry.Status.DONE -> Status(listOf(kind, formatBytes(entry.sizeBytes)).filter { it.isNotBlank() }.joinToString(" · "))
-                DownloadEntry.Status.FAILED -> Text(entry.error ?: "Download failed.", style = MaterialTheme.typography.bodySmall, color = Coral)
+                DownloadEntry.Status.FAILED -> Text(entry.error ?: "Download failed.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onBackground, fontWeight = androidx.compose.ui.text.font.FontWeight.Medium)
             }
         }
         when (entry.status) {

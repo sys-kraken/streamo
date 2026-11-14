@@ -190,7 +190,7 @@ object IosPlayer : PlayerController {
             while (previous.size > 20) previous.removeFirst()
         }
         _nowPlaying.value = NowPlaying(video, speed = speed)
-        load(video, LibraryStore.settings.value.maxHeight, startAt = 0.0)
+        load(video, LibraryStore.settings.value.maxHeight, startAt = LibraryStore.resumePositionMs(video.url) / 1000.0)
     }
 
     private fun load(video: VideoItem, maxHeight: Int, startAt: Double) {
@@ -307,8 +307,8 @@ object IosPlayer : PlayerController {
     private fun playNext() {
         val loaded = current ?: return
         val next = PlayQueue.nextAfter(loaded.video.url) ?: run {
-            val recent = LibraryStore.history.value.take(50).map { it.url }.toSet()
-            loaded.related.firstOrNull { it.url !in recent && !it.isLive }
+            val profile = com.streamo.app.data.currentTasteProfile()
+            com.streamo.app.data.Recommender.upNext(loaded.video, loaded.related, profile)
                 ?: loaded.related.firstOrNull { it.url != loaded.video.url }
         } ?: return
         log("up next: ${next.title}")

@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -66,6 +67,8 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.streamo.app.Platform
 import com.streamo.app.data.LibraryStore
+import com.streamo.app.data.Recommender
+import com.streamo.app.nowMillis
 import com.streamo.app.data.YouTubeRepo
 import com.streamo.app.htmlToText
 import com.streamo.app.player.NowPlaying
@@ -101,9 +104,9 @@ fun PlayerSurface(
                 modifier = Modifier.fillMaxSize(),
             )
             Box(Modifier.fillMaxSize().background(Color(0x55000000)))
-            if (controls) CircularProgressIndicator(color = Ember, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
+            if (controls) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
         } else if (state != null && state.isBuffering && !state.isPlaying && controls) {
-            CircularProgressIndicator(color = Ember, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
+            CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
         }
     }
 }
@@ -131,6 +134,8 @@ fun WatchScreen(
     val url = now.video.url
     val details = rememberLoad(url) { YouTubeRepo.details(url, settings.maxHeight) }
     val queue by PlayQueue.queue.collectAsState()
+    val history by LibraryStore.history.collectAsState()
+    val hidden by LibraryStore.hidden.collectAsState()
     // Look up the first few "up next" videos ahead of time so tapping one starts quickly.
     LaunchedEffect(details.state) {
         val related = (details.state as? Load.Done)?.value?.related ?: return@LaunchedEffect
@@ -138,6 +143,13 @@ fun WatchScreen(
         // had time to start before looking up one more, so it doesn't compete for bandwidth.
         delay(4_000)
         related.getOrNull(1)?.let { YouTubeRepo.prefetch(it.url) }
+    }
+
+    // Streamo's own order: what autoplay picks next comes first, watched videos last.
+    val liked by LibraryStore.liked.collectAsState()
+    val ranked = remember(details.state, history.size, hidden, liked.size) {
+        val d = (details.state as? Load.Done)?.value ?: return@remember emptyList()
+        Recommender.rankRelated(d.item, d.related, com.streamo.app.data.currentTasteProfile())
     }
 
     var dragged by remember { mutableFloatStateOf(0f) }
@@ -175,11 +187,14 @@ fun WatchScreen(
                 Column(
                     Modifier.fillMaxWidth().clickable { expanded = !expanded }.padding(12.dp).animateContentSize()
                 ) {
-                    Text(video.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold,
+                    Text(video.title, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold,
                         maxLines = if (expanded) 6 else 2, overflow = TextOverflow.Ellipsis)
-                    Spacer(Modifier.height(4.dp))
-                    Text(subtitle("", video.views, video.uploaded, video.isLive) + if (expanded) "" else "  ...more",
-                        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    Spacer(Modifier.height(6.dp))
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Text(subtitle("", video.views, video.uploaded, video.isLive).replace(" • ", "  "),
+                            style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (!expanded) Text("  ...more", style = MaterialTheme.typography.bodySmall, fontWeight = FontWeight.SemiBold)
+                    }
                     val desc = (details.state as? Load.Done)?.value?.description
                     if (expanded && !desc.isNullOrBlank()) {
                         Spacer(Modifier.height(8.dp))
@@ -193,6 +208,7 @@ fun WatchScreen(
             }
             item { ChannelRow(now, details, subs.map { it.url }.toSet(), nav, onCollapse) }
             item { ActionRow(now, details, onPip) }
+            item { CommentsPreview(url) }
             item { HorizontalDivider(Modifier.padding(top = 4.dp)) }
             // Playing a playlist: show it first, with the current video marked.
             val q = queue
@@ -216,8 +232,14 @@ fun WatchScreen(
             when (val s = details.state) {
                 Load.Loading -> item { Loading() }
                 is Load.Failed -> item { ErrorMessage(s.message, details.reload) }
-                is Load.Done -> items(s.value.related, key = { "r" + it.url }) { v ->
-                    VideoRow(v) { PlayerConnection.play(v) }
+                is Load.Done -> {
+                    if (ranked.isNotEmpty() && (q == null || q.videos.none { it.url == now.video.url })) item {
+                        Text("Up next", Modifier.padding(start = 16.dp, top = 12.dp, bottom = 8.dp),
+                            style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.Bold)
+                    }
+                    items(ranked, key = { "r" + it.url }) { v ->
+                        VideoCard(v, onClick = { PlayerConnection.play(v) }, onChannel = v.channelUrl?.let { ch -> { onCollapse(); nav.openChannel(ch) } })
+                    }
                 }
             }
             item { Spacer(Modifier.windowInsetsBottomHeight(WindowInsets.navigationBars)) }
@@ -275,13 +297,19 @@ private fun ActionRow(now: NowPlaying, details: Loader<com.streamo.app.data.Vide
             .padding(horizontal = 12.dp, vertical = 4.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
     ) {
-        if (likes >= 0) Pill(Icons.Outlined.ThumbUp, formatCount(likes, "").trim()) {}
+        val likedList by LibraryStore.liked.collectAsState()
+        val liked = likedList.any { it.url == video.url }
+        Pill(
+            if (liked) Icons.Filled.ThumbUp else Icons.Outlined.ThumbUp,
+            if (likes >= 0) formatCount(likes, "").trim() else "Like",
+            selected = liked,
+        ) { LibraryStore.toggleLike(video) }
         Pill(Icons.Default.Share, "Share") {
             Platform.ui.share(now.video.title, "${now.video.title}\n${now.video.url}")
         }
         Pill(Icons.AutoMirrored.Filled.PlaylistAdd, "Save") { saving = true }
         Pill(Icons.Default.Download, "Download") { downloading = true }
-        Pill(Icons.Default.PictureInPictureAlt, "Pop-up", onPip)
+        Pill(Icons.Default.PictureInPictureAlt, "Pop-up", onClick = onPip)
     }
 }
 
@@ -349,18 +377,20 @@ private fun SheetChoice(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun Pill(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, onClick: () -> Unit) {
+private fun Pill(icon: androidx.compose.ui.graphics.vector.ImageVector, label: String, selected: Boolean = false, onClick: () -> Unit) {
+    val c = MaterialTheme.colorScheme
     Row(
         Modifier
-            .background(MaterialTheme.colorScheme.surfaceVariant, RoundedCornerShape(50))
+            .background(if (selected) c.onBackground else c.surfaceVariant, RoundedCornerShape(50))
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 7.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Icon(icon, null, Modifier.size(18.dp))
+        Icon(icon, null, Modifier.size(18.dp), tint = if (selected) c.background else c.onBackground)
         if (label.isNotEmpty()) {
             Spacer(Modifier.width(6.dp))
-            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false)
+            Text(label, style = MaterialTheme.typography.labelLarge, maxLines = 1, softWrap = false,
+                color = if (selected) c.background else c.onBackground)
         }
     }
 }
@@ -375,12 +405,12 @@ fun MiniPlayer(now: NowPlaying, onExpand: () -> Unit) {
             delay(500)
         }
     }
-    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainerHigh)) {
+    Column(Modifier.fillMaxWidth().background(MaterialTheme.colorScheme.surfaceContainer)) {
         Row(
-            Modifier.fillMaxWidth().height(60.dp).clickable(onClick = onExpand),
+            Modifier.fillMaxWidth().height(64.dp).clickable(onClick = onExpand),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            PlayerSurface(Modifier.width(107.dp).height(60.dp), controls = false)
+            PlayerSurface(Modifier.width(114.dp).height(64.dp), controls = false)
             Column(Modifier.weight(1f).padding(horizontal = 10.dp)) {
                 Text(now.video.title, style = MaterialTheme.typography.bodyMedium, maxLines = 1, overflow = TextOverflow.Ellipsis)
                 Text(now.video.channelName, style = MaterialTheme.typography.bodySmall,
@@ -394,8 +424,8 @@ fun MiniPlayer(now: NowPlaying, onExpand: () -> Unit) {
         LinearProgressIndicator(
             progress = { progress },
             modifier = Modifier.fillMaxWidth().height(2.dp),
-            color = Ember,
-            trackColor = Color.Transparent,
+            color = MaterialTheme.colorScheme.onBackground,
+            trackColor = MaterialTheme.colorScheme.surfaceVariant,
             drawStopIndicator = {},
         )
     }

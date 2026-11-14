@@ -228,7 +228,7 @@ private fun PlaylistHeader(
             Button(
                 onClick = { PlayerConnection.playQueue(title, videos.toList(), 0) },
                 enabled = videos.isNotEmpty(),
-                colors = ButtonDefaults.buttonColors(containerColor = Parchment, contentColor = Ink),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onBackground, contentColor = MaterialTheme.colorScheme.background),
             ) {
                 Icon(Icons.Default.PlayArrow, null, Modifier.size(18.dp)); Spacer(Modifier.width(6.dp)); Text("Play all")
             }
@@ -303,7 +303,7 @@ fun SaveToPlaylistSheet(video: VideoItem, onDismiss: () -> Unit) {
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(if (inIt) Icons.Default.CheckBox else Icons.Default.CheckBoxOutlineBlank, null,
-                        tint = if (inIt) Ember else MaterialTheme.colorScheme.onSurfaceVariant)
+                        tint = if (inIt) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant)
                     Spacer(Modifier.width(18.dp))
                     Text(p.name, Modifier.weight(1f))
                     Text("${p.videos.size}", color = MaterialTheme.colorScheme.onSurfaceVariant)
