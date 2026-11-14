@@ -1,0 +1,103 @@
+# Codemagic builds the iOS app on a Mac. This workflow only checks that it compiles
+# (simulator build, no signing, no Apple account needed). Signed builds come later.
+workflows:
+  ios-check:
+    name: iOS compile check
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      java: 17
+      xcode: latest
+    triggering:
+      events: [push]
+      branch_patterns:
+        - pattern: streamo-ios
+    scripts:
+      - name: Generate Xcode project
+        script: |
+          brew install xcodegen
+          cd iosApp && xcodegen generate
+      - name: Build for the iOS simulator
+        script: |
+          chmod +x gradlew
+          xcodebuild -project iosApp/Streamo.xcodeproj -scheme Streamo \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug ARCHS=arm64 CODE_SIGNING_ALLOWED=NO build
+
+  # Started by hand ("Start new build" → this workflow). Plays test videos in the iPhone Simulator
+  # and saves screenshots, screen recordings and the player's log under Artifacts.
+  ios-sim-test:
+    name: iOS Simulator playback test
+    instance_type: mac_mini_m2
+    max_build_duration: 60
+    environment:
+      java: 17
+      xcode: latest
+    scripts:
+      - name: Generate Xcode project
+        script: |
+          brew install xcodegen
+          cd iosApp && xcodegen generate
+      - name: Build for the iOS simulator
+        script: |
+          chmod +x gradlew
+          xcodebuild -project iosApp/Streamo.xcodeproj -scheme Streamo \
+            -sdk iphonesimulator -destination 'generic/platform=iOS Simulator' \
+            -configuration Debug ARCHS=arm64 CODE_SIGNING_ALLOWED=NO \
+            -derivedDataPath build/sim build
+      - name: Check that this machine can download YouTube's video files
+        script: |
+          mkdir -p test-results
+          python3 iosApp/Tests/youtube_check.py 2>&1 | tee test-results/network-check.txt
+      - name: Play test videos in the Simulator
+        script: |
+          mkdir -p test-results
+          DEVICE=$(xcrun simctl list devices available -j | python3 -c '
+          import json, sys
+          devices = json.load(sys.stdin)["devices"]
+          phones = [d for runtime, ds in sorted(devices.items(), reverse=True) if "iOS" in runtime for d in ds if d["name"].startswith("iPhone")]
+          print(phones[0]["udid"])')
+          echo "Simulator: $DEVICE"
+          xcrun simctl boot "$DEVICE" || true
+          xcrun simctl bootstatus "$DEVICE" -b
+          xcrun simctl install "$DEVICE" build/sim/Build/Products/Debug-iphonesimulator/Streamo.app
+          # The first launch on a freshly booted Simulator can be slow; open Streamo once before the timed runs.
+          xcrun simctl launch "$DEVICE" com.streamo.app
+          sleep 20
+          xcrun simctl terminate "$DEVICE" com.streamo.app || true
+
+          # play <name> <video link> <seconds to jump to once it plays> [extra launch arguments]
+          play() {
+            xcrun simctl io "$DEVICE" recordVideo --codec h264 --force "test-results/$1.mp4" &
+            REC=$!
+            # The device log too, in case the app's console output gets lost.
+            xcrun simctl spawn "$DEVICE" log stream --style compact --predicate 'eventMessage CONTAINS "Streamo"' > "test-results/$1-device.log" 2>&1 &
+            LOG=$!
+            xcrun simctl launch --console-pty --terminate-running-process "$DEVICE" com.streamo.app \
+              -StreamoAutoplay "$2" -StreamoSeek "$3" $4 > "test-results/$1.log" 2>&1 &
+            APP=$!
+            sleep 20
+            xcrun simctl io "$DEVICE" screenshot "test-results/$1-20s.png"
+            sleep 15
+            xcrun simctl io "$DEVICE" screenshot "test-results/$1-35s.png"
+            kill -INT $REC; wait $REC || true
+            kill $LOG 2>/dev/null || true
+            xcrun simctl terminate "$DEVICE" com.streamo.app || true
+            kill $APP 2>/dev/null || true
+          }
+          play 1-hls "https://www.youtube.com/watch?v=dQw4w9WgXcQ" 60
+          play 2-separate-files "https://www.youtube.com/watch?v=yT_AfrHbAyA" 120
+          play 3-sponsorblock "https://www.youtube.com/watch?v=AAtf5j5tp-8" 0
+          # Not YouTube: a public sample video, to test the player without YouTube's blocking.
+          # (Google's gtv-videos-bucket copy now answers 403 to everyone.)
+          play 4-public-file "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4" 120 -StreamoTestFile
+          # A bare AVPlayer with none of Streamo's player code: if these don't play either, it's the Simulator.
+          play 5-plain-hls "https://devstreaming-cdn.apple.com/videos/streaming/examples/img_bipbop_adv_example_fmp4/master.m3u8" 0 -StreamoPlainPlayer
+          play 6-plain-file "https://archive.org/download/BigBuckBunny_124/Content/big_buck_bunny_720p_surround.mp4" 0 -StreamoPlainPlayer
+          grep -h "StreamoPlayer" $(ls test-results/*.log | grep -v -- '-device.log') > test-results/summary.txt || true
+          grep -h "StreamoPlayer" test-results/*-device.log > test-results/summary-device.txt || true
+          # Crash reports, if Streamo crashed during a run.
+          cp ~/Library/Logs/DiagnosticReports/Streamo* test-results/ 2>/dev/null || true
+          cat test-results/summary.txt
+    artifacts:
+      - test-results/**

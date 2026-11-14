@@ -10,8 +10,17 @@ import coil3.memory.MemoryCache
 import coil3.network.okhttp.OkHttpNetworkFetcherFactory
 import coil3.request.crossfade
 import com.streamo.app.data.LibraryStore
+import com.streamo.app.data.NewPipeRepo
 import com.streamo.app.data.OkHttpDownloader
+import com.streamo.app.data.SharedPrefsStorage
 import com.streamo.app.data.SponsorBlock
+import com.streamo.app.data.init
+import com.streamo.app.download.AndroidDownloadRunner
+import com.streamo.app.download.Downloads
+import com.streamo.app.player.AndroidPlayer
+import com.streamo.app.ui.AndroidPlatformUi
+import io.ktor.client.HttpClient
+import io.ktor.client.engine.okhttp.OkHttp
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
@@ -25,8 +34,11 @@ class StreamoApp : Application(), SingletonImageLoader.Factory {
 
     override fun onCreate() {
         super.onCreate()
+        Platform.videos = NewPipeRepo
+        Platform.player = AndroidPlayer
+        Platform.ui = AndroidPlatformUi(this)
         LibraryStore.init(this)
-        com.streamo.app.download.Downloads.init(this)
+        Downloads.init(SharedPrefsStorage(this, "downloads"), AndroidDownloadRunner(this))
         val locale = Locale.getDefault()
         NewPipe.init(
             OkHttpDownloader(http),
@@ -61,6 +73,6 @@ class StreamoApp : Application(), SingletonImageLoader.Factory {
                 .connectionPool(ConnectionPool(16, 5, TimeUnit.MINUTES))
                 .build()
         }
-        val sponsorBlock by lazy { SponsorBlock(http) }
+        val sponsorBlock by lazy { SponsorBlock(HttpClient(OkHttp) { engine { preconfigured = http } }) }
     }
 }

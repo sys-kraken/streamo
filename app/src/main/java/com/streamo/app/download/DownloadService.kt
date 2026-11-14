@@ -20,7 +20,7 @@ import androidx.core.content.ContextCompat
 import com.streamo.app.MainActivity
 import com.streamo.app.R
 import com.streamo.app.StreamoApp
-import com.streamo.app.data.YouTubeRepo
+import com.streamo.app.data.NewPipeRepo
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -77,7 +77,7 @@ class DownloadService : Service() {
             try {
                 val (uri, size) = download(entry)
                 if (Downloads.isCancelled(entry.id)) {
-                    Downloads.delete(this, entry.id)
+                    Downloads.delete(entry.id)
                 } else {
                     Downloads.update(entry.id) { it.copy(status = DownloadEntry.Status.DONE, uri = uri.toString(), sizeBytes = size) }
                     notifications.notify(entry.id.hashCode(), doneNotification(entry))
@@ -101,7 +101,7 @@ class DownloadService : Service() {
     private suspend fun download(entry: DownloadEntry): Pair<Uri, Long> {
         val work = File(cacheDir, "downloads/${entry.id}").apply { mkdirs() }
         try {
-            val (video, audio) = YouTubeRepo.downloadSources(entry.video.url, entry.audioOnly, entry.height)
+            val (video, audio) = NewPipeRepo.downloadSources(entry.video.url, entry.audioOnly, entry.height)
             val videoFile = video?.let { File(work, "video.mp4") }
             val audioFile = File(work, "audio.m4a")
 
