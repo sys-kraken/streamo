@@ -20,7 +20,15 @@ import androidx.compose.material.icons.filled.VideoLibrary
 import androidx.compose.material.icons.outlined.Home
 import androidx.compose.material.icons.outlined.Subscriptions
 import androidx.compose.material.icons.outlined.VideoLibrary
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.dp
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -93,6 +101,9 @@ fun StreamoRoot(state: AppState, landscape: Boolean, onPip: () -> Unit) {
         openPlaylist = { id -> navController.navigate("playlist/$id") },
         openYouTubePlaylist = { url -> navController.navigate("ytplaylist/${url.encodeURLParameter()}") },
         openDownloads = { navController.navigate("downloads") },
+        openHistory = { navController.navigate("history") { launchSingleTop = true } },
+        openLiked = { navController.navigate("liked") { launchSingleTop = true } },
+        openInterests = { navController.navigate("interests") { launchSingleTop = true } },
         back = { navController.popBackStack() },
     )
 
@@ -154,6 +165,9 @@ private fun AppNavHost(navController: NavHostController, nav: Nav, state: AppSta
         composable("library") { LibraryScreen(nav, pad) }
         composable("search") { SearchScreen(nav, pad) }
         composable("settings") { SettingsScreen(nav, pad) }
+        composable("history") { HistoryScreen(nav, pad) }
+        composable("liked") { LikedScreen(nav, pad) }
+        composable("interests") { InterestsScreen(nav, pad) }
         composable("downloads") { DownloadsScreen(nav, onPlayed = { state.watchExpanded = true }, pad) }
         composable("playlist/{id}") { entry -> LocalPlaylistScreen(entry.arg("id"), nav, pad) }
         composable("ytplaylist/{url}") { entry ->
@@ -170,31 +184,48 @@ private fun NavBackStackEntry.arg(name: String): String = arguments?.read { getS
 @Composable
 private fun BottomBar(navController: NavHostController, state: AppState) {
     val route = navController.currentBackStackEntryAsState().value?.destination?.route
-    NavigationBar(containerColor = MaterialTheme.colorScheme.background) {
-        listOf(
-            Triple("home", "Home", Icons.Filled.Home to Icons.Outlined.Home),
-            Triple("subs", "Subscriptions", Icons.Filled.Subscriptions to Icons.Outlined.Subscriptions),
-            Triple("library", "Library", Icons.Filled.VideoLibrary to Icons.Outlined.VideoLibrary),
-        ).forEach { (dest, label, icons) ->
-            val selected = route == dest
-            NavigationBarItem(
-                selected = selected,
-                onClick = {
-                    state.watchExpanded = false
-                    // A tab always opens its own main screen, closing Settings, Search, a channel, etc.
-                    if (dest == "home") {
-                        navController.popBackStack("home", inclusive = false)
-                    } else {
-                        navController.navigate(dest) {
-                            popUpTo("home")
-                            launchSingleTop = true
+    val colors = MaterialTheme.colorScheme
+    Column {
+        HorizontalDivider(color = colors.outlineVariant, thickness = 0.5.dp)
+        NavigationBar(containerColor = colors.background, tonalElevation = 0.dp, modifier = Modifier.height(64.dp + navBarHeight())) {
+            listOf(
+                Triple("home", "Home", Icons.Filled.Home to Icons.Outlined.Home),
+                Triple("subs", "Subscriptions", Icons.Filled.Subscriptions to Icons.Outlined.Subscriptions),
+                Triple("library", "You", Icons.Filled.VideoLibrary to Icons.Outlined.VideoLibrary),
+            ).forEach { (dest, label, icons) ->
+                // History is part of the "You" tab.
+                val selected = route == dest || (dest == "library" && route in setOf("history", "liked", "interests"))
+                NavigationBarItem(
+                    selected = selected,
+                    onClick = {
+                        state.watchExpanded = false
+                        // A tab always opens its own main screen, closing Settings, Search, a channel, etc.
+                        if (dest == "home") {
+                            navController.popBackStack("home", inclusive = false)
+                        } else {
+                            navController.navigate(dest) {
+                                popUpTo("home")
+                                launchSingleTop = true
+                            }
                         }
-                    }
-                },
-                icon = { Icon(if (selected) icons.first else icons.second, label) },
-                label = { Text(label) },
-                colors = NavigationBarItemDefaults.colors(indicatorColor = MaterialTheme.colorScheme.surfaceVariant),
-            )
+                    },
+                    icon = { Icon(if (selected) icons.first else icons.second, label) },
+                    label = {
+                        Text(label, style = MaterialTheme.typography.labelSmall,
+                            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
+                    },
+                    colors = NavigationBarItemDefaults.colors(
+                        indicatorColor = Color.Transparent,
+                        selectedIconColor = colors.onBackground,
+                        selectedTextColor = colors.onBackground,
+                        unselectedIconColor = colors.onBackground,
+                        unselectedTextColor = colors.onBackground,
+                    ),
+                )
+            }
         }
     }
 }
+
+@Composable
+private fun navBarHeight() = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }

@@ -11,6 +11,7 @@ import android.util.Rational
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
+import androidx.activity.SystemBarStyle
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxSize
@@ -32,6 +33,7 @@ import com.streamo.app.player.PlayerConnection
 import com.streamo.app.ui.AppState
 import com.streamo.app.ui.PlayerSurface
 import com.streamo.app.ui.StreamoRoot
+import com.streamo.app.ui.LocalDarkTheme
 import com.streamo.app.ui.StreamoTheme
 
 class MainActivity : ComponentActivity() {
@@ -53,6 +55,13 @@ class MainActivity : ComponentActivity() {
 
         setContent {
             StreamoTheme {
+                // Dark status bar icons on the white theme, light ones on black.
+                val dark = LocalDarkTheme.current
+                LaunchedEffect(dark) {
+                    val transparent = android.graphics.Color.TRANSPARENT
+                    val style = if (dark) SystemBarStyle.dark(transparent) else SystemBarStyle.light(transparent, transparent)
+                    enableEdgeToEdge(statusBarStyle = style, navigationBarStyle = style)
+                }
                 if (inPip) {
                     PlayerSurface(Modifier.fillMaxSize(), controls = false)
                 } else {

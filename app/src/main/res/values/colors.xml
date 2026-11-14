@@ -1,5 +1,5 @@
 <resources>
-    <!-- Taken from the Streamo logo: warm black, ember orange, sea-green, parchment. -->
-    <color name="bg">#120D0B</color>
-    <color name="icon_bg">#1A1310</color>
+    <!-- Window background before the app draws: white here, black in values-night. -->
+    <color name="bg">#FFFFFF</color>
+    <color name="icon_bg">#FFFFFF</color>
 </resources>

@@ -93,7 +93,7 @@ fun UpdateSection() {
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Default.SystemUpdate, null, tint = Ember)
+            Icon(Icons.Default.SystemUpdate, null, tint = MaterialTheme.colorScheme.onBackground)
             Spacer(Modifier.width(14.dp))
             Column(Modifier.weight(1f)) {
                 Text("Streamo ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.titleMedium)
@@ -108,11 +108,11 @@ fun UpdateSection() {
                         is UpdateState.Failed -> s.message
                     },
                     style = MaterialTheme.typography.bodySmall,
-                    color = if (state is UpdateState.Available) Kelp else MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = if (state is UpdateState.Available) MaterialTheme.colorScheme.onBackground else MaterialTheme.colorScheme.onSurfaceVariant,
                 )
             }
             if (state is UpdateState.Checking) {
-                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = Ember)
+                CircularProgressIndicator(Modifier.size(22.dp), strokeWidth = 2.dp, color = MaterialTheme.colorScheme.onBackground)
             }
         }
 
@@ -127,21 +127,21 @@ fun UpdateSection() {
                 }
                 Button(
                     onClick = { download(s.release) },
-                    colors = ButtonDefaults.buttonColors(containerColor = Ember, contentColor = Ink),
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onBackground, contentColor = MaterialTheme.colorScheme.background),
                     modifier = Modifier.fillMaxWidth(),
                 ) { Text("Download and install") }
             }
             is UpdateState.Downloading -> LinearProgressIndicator(
-                progress = { s.progress }, color = Ember, modifier = Modifier.fillMaxWidth().height(6.dp),
+                progress = { s.progress }, color = MaterialTheme.colorScheme.onBackground, trackColor = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth().height(6.dp),
             )
             is UpdateState.Ready -> Button(
                 onClick = { Updater.install(context, s.apk) },
-                colors = ButtonDefaults.buttonColors(containerColor = Ember, contentColor = Ink),
+                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.onBackground, contentColor = MaterialTheme.colorScheme.background),
                 modifier = Modifier.fillMaxWidth(),
             ) { Text("Install") }
             UpdateState.Checking -> {}
             else -> OutlinedButton(onClick = { check() }, modifier = Modifier.fillMaxWidth()) {
-                Text("Check for updates")
+                Text("Check for updates", color = MaterialTheme.colorScheme.onBackground)
             }
         }
     }

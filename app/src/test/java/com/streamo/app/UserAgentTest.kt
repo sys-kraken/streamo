@@ -2,7 +2,7 @@ package com.streamo.app
 
 import com.streamo.app.data.OkHttpDownloader
 import com.streamo.app.data.SearchResult
-import com.streamo.app.data.YouTubeRepo
+import com.streamo.app.data.NewPipeRepo
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -31,11 +31,11 @@ class UserAgentTest {
     fun userAgents() = runBlocking {
         NewPipe.init(OkHttpDownloader(client))
         val urls = listOf("music mix 2000s", "how money works", "cooking pasta").flatMap { q ->
-            YouTubeRepo.search(q).items.filterIsInstance<SearchResult.Video>().filter { !it.video.isLive }.take(4).map { it.video.url }
+            NewPipeRepo.search(q).items.filterIsInstance<SearchResult.Video>().filter { !it.video.isLive }.take(4).map { it.video.url }
         }
         var plain403 = 0; var matched403 = 0; var total = 0
         for (u in urls) {
-            val s = runCatching { YouTubeRepo.streams(u, 1080).second }.getOrNull() ?: continue
+            val s = runCatching { NewPipeRepo.streams(u, 1080).second }.getOrNull() ?: continue
             for (stream in listOfNotNull(s.videoUrl, s.audioUrl)) {
                 total++
                 val client = Regex("[?&]c=([A-Z_]+)").find(stream)?.groupValues?.get(1)

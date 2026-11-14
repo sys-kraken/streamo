@@ -28,11 +28,36 @@ data class Settings(
     val sponsorBlock: Boolean = true,
     /** Keep playing sound when the app is closed or the screen turns off. */
     val backgroundPlay: Boolean = true,
+    /** "system", "dark" or "light". */
+    val theme: String = "system",
+    /** While on, watched videos aren't added to History (like YouTube's "Pause watch history"). */
+    val historyPaused: Boolean = false,
+    /** While on, searches aren't remembered. */
+    val searchHistoryPaused: Boolean = false,
+    /** Start videos where you left off. */
+    val resumePlayback: Boolean = true,
+    /** How much of Home is new channels and topics: 0 none, 1 some, 2 more. */
+    val discovery: Int = 1,
 )
+
+/** How far into a video you got, and when you last watched it. */
+@Serializable
+data class WatchState(
+    val watchedAtMs: Long,
+    val positionMs: Long = 0,
+    val durationMs: Long = 0,
+    /** How many times you've opened it; watching again is a strong sign you like it. */
+    val plays: Int = 1,
+) {
+    /** 0..1, or null when the length isn't known. */
+    val fraction: Float?
+        get() = if (durationMs > 0) (positionMs.toFloat() / durationMs).coerceIn(0f, 1f) else null
+}
 
 /** Everything saved on the phone: subscriptions, watch history and settings. No account needed. */
 object LibraryStore {
     private const val MAX_HISTORY = 300
+    private const val MAX_SEARCHES = 50
     private val json = Json { ignoreUnknownKeys = true }
     private lateinit var storage: KeyValueStorage
 
@@ -45,6 +70,33 @@ object LibraryStore {
     private val _playlists = MutableStateFlow<List<LocalPlaylist>>(emptyList())
     val playlists: StateFlow<List<LocalPlaylist>> = _playlists.asStateFlow()
 
+    /** Watch time and progress per video link. Saved apart from "history" so older saves stay readable. */
+    private val _watch = MutableStateFlow<Map<String, WatchState>>(emptyMap())
+    val watch: StateFlow<Map<String, WatchState>> = _watch.asStateFlow()
+
+    private val _searches = MutableStateFlow<List<String>>(emptyList())
+    val searches: StateFlow<List<String>> = _searches.asStateFlow()
+
+    /** Videos and channels marked "Not interested" / "Don't recommend channel". */
+    private val _hidden = MutableStateFlow(Hidden())
+    val hidden: StateFlow<Hidden> = _hidden.asStateFlow()
+
+    @Serializable
+    data class Hidden(
+        val videos: Set<String> = emptySet(),
+        val channels: Set<String> = emptySet(),
+        /** Words removed under "Your interests"; videos about them aren't recommended. */
+        val topics: Set<String> = emptySet(),
+    )
+
+    /** Videos you liked in Streamo (kept on the phone, never sent to YouTube). */
+    private val _liked = MutableStateFlow<List<VideoItem>>(emptyList())
+    val liked: StateFlow<List<VideoItem>> = _liked.asStateFlow()
+
+    /** How often each video was shown on Home. Shown a lot but never opened = probably not for you. */
+    private val _impressions = MutableStateFlow<Map<String, Int>>(emptyMap())
+    val impressions: StateFlow<Map<String, Int>> = _impressions.asStateFlow()
+
     private val _settings = MutableStateFlow(Settings())
     val settings: StateFlow<Settings> = _settings.asStateFlow()
 
@@ -54,6 +106,11 @@ object LibraryStore {
         _history.value = read("history") ?: emptyList()
         _settings.value = read("settings") ?: Settings()
         _playlists.value = read("playlists") ?: emptyList()
+        _watch.value = read("watch") ?: emptyMap()
+        _searches.value = read("searches") ?: emptyList()
+        _hidden.value = read("hidden") ?: Hidden()
+        _liked.value = read("liked") ?: emptyList()
+        _impressions.value = read("impressions") ?: emptyMap()
     }
 
     fun isSubscribed(url: String) = _subscriptions.value.any { it.url == url }
@@ -67,13 +124,147 @@ object LibraryStore {
     }
 
     fun addToHistory(video: VideoItem) {
+        if (_settings.value.historyPaused) return
         _history.update { list -> (listOf(video) + list.filterNot { it.url == video.url }).take(MAX_HISTORY) }
         write("history", _history.value)
+        val now = com.streamo.app.nowMillis()
+        _watch.update { map ->
+            val kept = map.filterKeys { k -> k == video.url || _history.value.any { it.url == k } }
+            val old = kept[video.url]
+            kept + (video.url to (old?.copy(watchedAtMs = now, plays = old.plays + 1) ?: WatchState(now, 0, video.durationSec * 1000)))
+        }
+        write("watch", _watch.value)
+    }
+
+    fun removeFromHistory(url: String) {
+        _history.update { list -> list.filterNot { it.url == url } }
+        _watch.update { it - url }
+        write("history", _history.value)
+        write("watch", _watch.value)
     }
 
     fun clearHistory() {
         _history.value = emptyList()
+        _watch.value = emptyMap()
         write("history", _history.value)
+        write("watch", _watch.value)
+    }
+
+    private var lastPositionSave = 0L
+
+    /**
+     * Remembers how far into [url] playback got. Called often by the player; saved to the phone
+     * at most every 10 s unless [force] (pause, video change).
+     */
+    fun savePosition(url: String, positionMs: Long, durationMs: Long, force: Boolean = false) {
+        if (_settings.value.historyPaused || positionMs < 0) return
+        val old = _watch.value[url] ?: return // only videos in History
+        _watch.update { it + (url to old.copy(positionMs = positionMs, durationMs = durationMs.takeIf { d -> d > 0 } ?: old.durationMs)) }
+        val now = com.streamo.app.nowMillis()
+        if (force || now - lastPositionSave > 10_000) {
+            lastPositionSave = now
+            write("watch", _watch.value)
+        }
+    }
+
+    /** Where to start [url]: where you left off, unless near the start, near the end, or turned off. */
+    fun resumePositionMs(url: String): Long {
+        if (!_settings.value.resumePlayback) return 0
+        val w = _watch.value[url] ?: return 0
+        if (w.positionMs < 10_000) return 0
+        if (w.durationMs > 0 && w.positionMs > w.durationMs - 15_000) return 0
+        return w.positionMs
+    }
+
+    // ---------- Search history ----------
+
+    fun addSearch(query: String) {
+        val q = query.trim()
+        if (q.isEmpty() || _settings.value.searchHistoryPaused) return
+        _searches.update { list -> (listOf(q) + list.filterNot { it.equals(q, ignoreCase = true) }).take(MAX_SEARCHES) }
+        write("searches", _searches.value)
+    }
+
+    fun removeSearch(query: String) {
+        _searches.update { list -> list.filterNot { it == query } }
+        write("searches", _searches.value)
+    }
+
+    fun clearSearches() {
+        _searches.value = emptyList()
+        write("searches", _searches.value)
+    }
+
+    // ---------- Not interested ----------
+
+    fun hideVideo(url: String) {
+        _hidden.update { it.copy(videos = (it.videos + url).toList().takeLast(500).toSet()) }
+        write("hidden", _hidden.value)
+    }
+
+    fun hideChannel(url: String) {
+        _hidden.update { it.copy(channels = it.channels + url) }
+        write("hidden", _hidden.value)
+    }
+
+    fun hideTopic(word: String) {
+        _hidden.update { it.copy(topics = it.topics + word.lowercase()) }
+        write("hidden", _hidden.value)
+    }
+
+    fun unhideTopic(word: String) {
+        _hidden.update { it.copy(topics = it.topics - word) }
+        write("hidden", _hidden.value)
+    }
+
+    fun unhideChannel(url: String) {
+        _hidden.update { it.copy(channels = it.channels - url) }
+        write("hidden", _hidden.value)
+    }
+
+    fun clearHidden() {
+        _hidden.value = Hidden()
+        write("hidden", _hidden.value)
+    }
+
+    // ---------- Likes ----------
+
+    fun isLiked(url: String) = _liked.value.any { it.url == url }
+
+    fun toggleLike(video: VideoItem) {
+        _liked.update { list ->
+            if (list.any { it.url == video.url }) list.filterNot { it.url == video.url } else listOf(video) + list
+        }
+        write("liked", _liked.value)
+    }
+
+    // ---------- Impressions ----------
+
+    private var lastImpressionSave = 0L
+
+    /** Notes that these videos were shown on Home (once per app session each, decided by the caller). */
+    fun recordImpressions(urls: Collection<String>) {
+        if (urls.isEmpty() || _settings.value.historyPaused) return
+        _impressions.update { map ->
+            val next = LinkedHashMap(map)
+            urls.forEach { u -> next[u] = (next.remove(u) ?: 0) + 1 } // re-insert: most recent last
+            // Keep the 800 most recently shown.
+            if (next.size > 800) next.keys.take(next.size - 800).toList().forEach(next::remove)
+            next
+        }
+        val now = com.streamo.app.nowMillis()
+        if (now - lastImpressionSave > 15_000) {
+            lastImpressionSave = now
+            write("impressions", _impressions.value)
+        }
+    }
+
+    /** Forget what Streamo learned from what you were shown and what you hid. History and likes stay. */
+    fun resetRecommendations() {
+        _impressions.value = emptyMap()
+        _hidden.value = Hidden()
+        write("impressions", _impressions.value)
+        write("hidden", _hidden.value)
     }
 
     // ---------- Playlists ----------

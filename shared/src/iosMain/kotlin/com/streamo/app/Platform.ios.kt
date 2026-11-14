@@ -3,11 +3,17 @@ package com.streamo.app
 import platform.Foundation.NSDate
 import platform.Foundation.NSLocale
 import platform.Foundation.NSLog
+import platform.Foundation.NSTimeZone
+import platform.Foundation.localTimeZone
+import platform.Foundation.secondsFromGMT
 import platform.Foundation.countryCode
 import platform.Foundation.currentLocale
 import platform.Foundation.timeIntervalSince1970
 
 actual fun nowMillis(): Long = (NSDate().timeIntervalSince1970 * 1000).toLong()
+
+// The current offset; close enough for grouping History by day.
+actual fun utcOffsetMillis(atMs: Long): Long = NSTimeZone.localTimeZone.secondsFromGMT * 1000L
 
 actual fun regionCode(): String = NSLocale.currentLocale.countryCode.orEmpty()
 

@@ -92,3 +92,28 @@ data class PlaylistPage(
 
 /** A choice offered in the Download sheet; [sizeBytes] is 0 when YouTube does not say. */
 data class DownloadOption(val audioOnly: Boolean, val height: Int, val sizeBytes: Long)
+
+/** One comment under a video. [text] may contain simple HTML (links, bold); show it with htmlToText. */
+data class Comment(
+    val id: String,
+    val author: String,
+    val authorAvatar: String?,
+    val authorUrl: String?,
+    val text: String,
+    val likes: Long,
+    val published: String?,
+    val replyCount: Int,
+    val pinned: Boolean,
+    val heartedByCreator: Boolean,
+    val byChannelOwner: Boolean,
+    /** Opaque handle for loading this comment's replies (see VideoSource.commentReplies); null if none. */
+    val replies: Any? = null,
+)
+
+/** A page of comments; [next] loads more, [count] is the total YouTube reports (-1 if unknown). */
+data class CommentsPage(
+    val comments: List<Comment>,
+    val next: Any?,
+    val count: Long = -1,
+    val disabled: Boolean = false,
+)

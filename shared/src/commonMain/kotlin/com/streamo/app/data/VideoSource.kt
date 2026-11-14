@@ -1,5 +1,6 @@
 package com.streamo.app.data
 
+import com.streamo.app.ComingSoon
 import com.streamo.app.Platform
 
 /**
@@ -24,6 +25,12 @@ interface VideoSource {
     suspend fun channel(url: String): ChannelPage
     /** A small picture of the channel, or null if it has none. */
     suspend fun channelAvatar(url: String): String?
+
+    /** The first page of a video's comments, top comments first. */
+    suspend fun comments(url: String): CommentsPage = throw ComingSoon("Comments are coming soon on this device.")
+    suspend fun commentsMore(url: String, next: Any): CommentsPage = throw ComingSoon("Comments are coming soon on this device.")
+    /** Replies to a comment, from its [Comment.replies] handle (or a page's [CommentsPage.next] for more). */
+    suspend fun commentReplies(url: String, replies: Any): CommentsPage = throw ComingSoon("Replies are coming soon on this device.")
 }
 
 /** All YouTube lookups made by the screens go through here. */

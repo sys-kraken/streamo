@@ -21,6 +21,9 @@ class ComingSoon(message: String) : Exception(message)
 /** Milliseconds since 1970, like System.currentTimeMillis(). */
 expect fun nowMillis(): Long
 
+/** How far the phone's clock is ahead of UTC at [atMs], in milliseconds (time zone + daylight saving). */
+expect fun utcOffsetMillis(atMs: Long): Long
+
 /** The phone's country as a two-letter code ("US", "PH"), or "" if unknown. */
 expect fun regionCode(): String
 
