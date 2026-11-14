@@ -1,7 +1,7 @@
 package com.streamo.app
 
 import com.streamo.app.data.OkHttpDownloader
-import com.streamo.app.data.YouTubeRepo
+import com.streamo.app.data.NewPipeRepo
 import kotlinx.coroutines.runBlocking
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -29,7 +29,7 @@ class SpeedTest {
         NewPipe.init(OkHttpDownloader(client))
         for (u in listOf("https://www.youtube.com/watch?v=aqz-KE-bpKQ", "https://www.youtube.com/watch?v=JGwWNGJdvx8")) {
             val t = System.currentTimeMillis()
-            val s = YouTubeRepo.streams(u, 1080).second
+            val s = NewPipeRepo.streams(u, 1080).second
             println("lookup ${System.currentTimeMillis() - t} ms")
             measure("video open-ended", s.videoUrl!!, "bytes=0-")
             measure("video closed 0-4MB", s.videoUrl!!, "bytes=0-3999999")

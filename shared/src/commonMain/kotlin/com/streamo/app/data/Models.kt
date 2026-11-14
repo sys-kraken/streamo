@@ -106,6 +106,8 @@ data class Comment(
     val pinned: Boolean,
     val heartedByCreator: Boolean,
     val byChannelOwner: Boolean,
+    /** Opaque handle for loading this comment's replies (see VideoSource.commentReplies); null if none. */
+    val replies: Any? = null,
 )
 
 /** A page of comments; [next] loads more, [count] is the total YouTube reports (-1 if unknown). */

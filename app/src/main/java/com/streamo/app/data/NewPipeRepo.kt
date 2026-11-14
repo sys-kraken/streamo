@@ -417,6 +417,11 @@ object NewPipeRepo : VideoSource {
         CommentsPage(page.items.map { it.toComment() }, page.nextPage?.let { CommentsNext(n.info, it) })
     }
 
+    override suspend fun commentReplies(url: String, replies: Any): CommentsPage = io {
+        val page = CommentsInfo.getMoreItems(yt, url, replies as Page)
+        CommentsPage(page.items.map { it.toComment() }, page.nextPage)
+    }
+
     private class CommentsNext(val info: CommentsInfo, val page: Page)
 
     private fun CommentsInfoItem.toComment() = Comment(
@@ -431,6 +436,7 @@ object NewPipeRepo : VideoSource {
         pinned = isPinned,
         heartedByCreator = isHeartedByUploader,
         byChannelOwner = isChannelOwner,
+        replies = replies?.takeIf { replyCount != 0 },
     )
 
     private suspend fun <T> io(block: () -> T): T = withContext(Dispatchers.IO) { block() }
