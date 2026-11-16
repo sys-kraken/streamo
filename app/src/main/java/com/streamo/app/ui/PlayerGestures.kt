@@ -21,7 +21,6 @@ import android.widget.TextView
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.PlayerView
-import com.streamo.app.data.LibraryStore
 import kotlin.math.abs
 import kotlin.math.roundToInt
 
@@ -30,7 +29,7 @@ import kotlin.math.roundToInt
  *  - double-tap the left or right side: back or forward 10 seconds (taps keep adding up),
  *  - press and hold: 2x speed until you let go,
  *  - in fullscreen, swipe up/down on the left for brightness and on the right for volume.
- * A single tap still shows and hides the player's own controls. Turned off in Settings (Player gestures).
+ * A single tap still shows and hides the player's own controls.
  */
 @OptIn(UnstableApi::class)
 class PlayerGestures(private val view: PlayerView) {
@@ -103,7 +102,6 @@ class PlayerGestures(private val view: PlayerView) {
 
     @SuppressLint("ClickableViewAccessibility")
     fun onTouch(e: MotionEvent): Boolean {
-        if (!LibraryStore.settings.value.gestures) return false
         if (fullscreen && handleSwipe(e)) return true
         detector.onTouchEvent(e)
         if ((e.action == MotionEvent.ACTION_UP || e.action == MotionEvent.ACTION_CANCEL) && holding) {

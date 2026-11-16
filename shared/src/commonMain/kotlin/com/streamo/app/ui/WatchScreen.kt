@@ -40,6 +40,7 @@ import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.ClosedCaption
 import androidx.compose.material.icons.filled.Headphones
 import androidx.compose.material.icons.filled.SkipNext
 import com.streamo.app.player.SponsorState
@@ -357,6 +358,28 @@ fun PlayerSettingsSheet(now: NowPlaying, onDismiss: () -> Unit) {
                         PlayerConnection.setAudioOnly(!now.audioOnly); onDismiss()
                     }
                     SheetRow(Icons.Default.Bedtime, "Sleep timer", sleepLabel(now)) { page = "sleep" }
+                    SheetRow(
+                        Icons.Default.ClosedCaption, "Captions",
+                        now.captionIndex?.let { now.captions.getOrNull(it) } ?: if (now.captions.isEmpty()) "None" else "Off",
+                    ) { page = "captions" }
+                }
+                "captions" -> {
+                    SheetTitle("Captions") { page = "main" }
+                    if (now.captions.isEmpty()) {
+                        Text("No captions for this video right now. YouTube sometimes holds them back; try again later.", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                    } else {
+                        SheetChoice("Off", now.captionIndex == null) { PlayerConnection.setCaption(null); onDismiss() }
+                        now.captions.forEachIndexed { i, label ->
+                            SheetChoice(label, now.captionIndex == i) { PlayerConnection.setCaption(i); onDismiss() }
+                        }
+                    }
+                    val settings by LibraryStore.settings.collectAsState()
+                    Text("Text size", Modifier.padding(start = 20.dp, top = 12.dp, bottom = 8.dp), style = MaterialTheme.typography.labelLarge)
+                    Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf("small" to "Small", "normal" to "Normal", "large" to "Large").forEach { (value, label) ->
+                            Chip(label, settings.captionSize == value) { LibraryStore.updateSettings { it.copy(captionSize = value) } }
+                        }
+                    }
                 }
                 "sleep" -> {
                     SheetTitle("Sleep timer") { page = "main" }

@@ -129,7 +129,7 @@ fun isDarkTheme(): Boolean {
     val settings by LibraryStore.settings.collectAsState()
     val system = isSystemInDarkTheme()
     return when (settings.theme) {
-        "dark" -> true
+        "dark", "dim" -> true
         "light" -> false
         else -> system
     }
@@ -140,7 +140,7 @@ fun StreamoTheme(darkTheme: Boolean = isDarkTheme(), content: @Composable () -> 
     val settings by LibraryStore.settings.collectAsState()
     val colors = when {
         !darkTheme -> light
-        settings.darkStyle == "dim" -> dim
+        settings.theme == "dim" -> dim
         else -> dark
     }
     MaterialTheme(colorScheme = colors, typography = typography) {

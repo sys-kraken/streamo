@@ -28,7 +28,7 @@ data class Settings(
     val sponsorBlock: Boolean = true,
     /** Keep playing sound when the app is closed or the screen turns off. */
     val backgroundPlay: Boolean = true,
-    /** "system", "dark" or "light". */
+    /** "system", "dark" (pure black), "dim" (dark grey) or "light". */
     val theme: String = "system",
     /** While on, watched videos aren't added to History (like YouTube's "Pause watch history"). */
     val historyPaused: Boolean = false,
@@ -38,8 +38,6 @@ data class Settings(
     val resumePlayback: Boolean = true,
     /** How much of Home is new channels and topics: 0 none, 1 some, 2 more. */
     val discovery: Int = 1,
-    /** Dark theme flavour: "black" (pure black, best on AMOLED screens) or "dim" (YouTube's dark grey). */
-    val darkStyle: String = "black",
     /** "best": highest-quality sound YouTube offers (Opus ~160 kbps); "saver": smallest, to save data. */
     val audioQuality: String = "best",
     val eqEnabled: Boolean = false,
@@ -51,14 +49,8 @@ data class Settings(
     val volumeLeveling: Boolean = false,
     /** SponsorBlock: what to do per category, "skip", "ask" or "off". Missing = the category's default. */
     val sponsorActions: Map<String, String> = emptyMap(),
-    /** Double-tap to skip, hold for 2x, swipe for brightness and volume (in fullscreen). */
-    val gestures: Boolean = true,
-    /** Show captions automatically when there are some in the phone's language. */
-    val captions: Boolean = false,
-    /** "small", "normal" or "large". */
+    /** Caption text size: "small", "normal" or "large" (chosen in the video's gear menu). */
     val captionSize: String = "normal",
-    /** Offer YouTube's automatic translation of captions into the phone's language. */
-    val captionTranslate: Boolean = true,
 )
 
 /** How far into a video you got, and when you last watched it. */

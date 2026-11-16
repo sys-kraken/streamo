@@ -821,15 +821,10 @@ fun SettingsScreen(nav: Nav, contentPadding: PaddingValues) {
         item { Platform.ui.AppUpdates() }
 
         item { SettingsHeader("Appearance") }
-        items(listOf("system" to "Use device theme", "dark" to "Dark theme", "light" to "Light theme")) { (value, label) ->
+        items(
+            listOf("system" to "Use device theme", "dark" to "Dark theme", "dim" to "Dark grey theme", "light" to "Light theme"),
+        ) { (value, label) ->
             ChoiceRow(label, settings.theme == value) { LibraryStore.updateSettings { it.copy(theme = value) } }
-        }
-        item {
-            Text("Dark theme style", Modifier.padding(start = 16.dp, top = 8.dp), style = MaterialTheme.typography.labelLarge)
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Chip("Black (AMOLED)", settings.darkStyle != "dim") { LibraryStore.updateSettings { it.copy(darkStyle = "black") } }
-                Chip("Dark grey", settings.darkStyle == "dim") { LibraryStore.updateSettings { it.copy(darkStyle = "dim") } }
-            }
         }
 
         item {
@@ -839,9 +834,6 @@ fun SettingsScreen(nav: Nav, contentPadding: PaddingValues) {
             }
             ToggleRow("Resume where you left off", "Videos you started before continue from the same spot.", settings.resumePlayback) { on ->
                 LibraryStore.updateSettings { it.copy(resumePlayback = on) }
-            }
-            ToggleRow("Player gestures", "Double-tap to skip 10 s, hold for 2x speed, and in fullscreen swipe for brightness (left) and volume (right).", settings.gestures) { on ->
-                LibraryStore.updateSettings { it.copy(gestures = on) }
             }
         }
 
@@ -856,22 +848,6 @@ fun SettingsScreen(nav: Nav, contentPadding: PaddingValues) {
             ActionRow("Equalizer", if (settings.eqEnabled) "On · ${settings.eqPreset}" else "Off", nav.openEqualizer)
             ToggleRow("Volume leveling", "Keeps loud and quiet videos at a similar volume, like Spotify's \"Normalize volume\".", settings.volumeLeveling) { on ->
                 LibraryStore.updateSettings { it.copy(volumeLeveling = on) }
-            }
-        }
-
-        item {
-            SettingsHeader("Captions")
-            ToggleRow("Show captions automatically", "When a video has captions in your phone's language. You can always turn them on with CC on the video.", settings.captions) { on ->
-                LibraryStore.updateSettings { it.copy(captions = on) }
-            }
-            ToggleRow("Offer translated captions", "Adds YouTube's automatic translation into your phone's language when a video has none.", settings.captionTranslate) { on ->
-                LibraryStore.updateSettings { it.copy(captionTranslate = on) }
-            }
-            Text("Caption size", Modifier.padding(start = 16.dp, top = 4.dp), style = MaterialTheme.typography.labelLarge)
-            Row(Modifier.padding(horizontal = 16.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                listOf("small" to "Small", "normal" to "Normal", "large" to "Large").forEach { (value, label) ->
-                    Chip(label, settings.captionSize == value) { LibraryStore.updateSettings { it.copy(captionSize = value) } }
-                }
             }
         }
 

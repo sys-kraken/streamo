@@ -29,15 +29,17 @@ object AndroidPlayer : PlayerController {
     private val scope = kotlinx.coroutines.MainScope()
 
     /** Audio-only mode (kept from video to video) and whether the app is on screen. */
-    private var audioOnly = false
+    private var audioOnlyOn = false
     private var screenVisible = true
 
-    private var sleepAtMs: Long? = null
-    private var sleepAtEnd = false
+    private var sleepDeadline: Long? = null
+    private var sleepAtVideoEnd = false
     private var sleepJob: kotlinx.coroutines.Job? = null
 
     /** Carries the player-wide choices (audio only, sleep timer) into a fresh [NowPlaying]. */
-    private fun NowPlaying.withModes() = copy(audioOnly = audioOnly, sleepAtMs = sleepAtMs, sleepAtEnd = sleepAtEnd)
+    // The player's own fields have different names from NowPlaying's: inside this extension a bare
+    // `audioOnly` would mean the NowPlaying's (old) value and the copy would change nothing.
+    private fun NowPlaying.withModes() = copy(audioOnly = audioOnlyOn, sleepAtMs = sleepDeadline, sleepAtEnd = sleepAtVideoEnd)
 
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     override val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
@@ -132,8 +134,8 @@ object AndroidPlayer : PlayerController {
     }
 
     override fun setAudioOnly(on: Boolean) {
-        if (audioOnly == on) return
-        audioOnly = on
+        if (audioOnlyOn == on) return
+        audioOnlyOn = on
         applyVideoTrack()
         // The picture track restarts from the next keyframe; a seek to the same spot makes it
         // show straight away instead of staying black until then.
@@ -144,7 +146,7 @@ object AndroidPlayer : PlayerController {
     /** The picture is downloaded only while the app is on screen and audio-only is off. */
     private fun applyVideoTrack() = withController {
         trackSelectionParameters = trackSelectionParameters.buildUpon()
-            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !screenVisible || audioOnly)
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !screenVisible || audioOnlyOn)
             .build()
     }
 
@@ -152,30 +154,30 @@ object AndroidPlayer : PlayerController {
 
     override fun setSleepTimer(minutes: Int?, endOfVideo: Boolean) {
         sleepJob?.cancel()
-        sleepAtMs = minutes?.let { System.currentTimeMillis() + it * 60_000L }
-        sleepAtEnd = endOfVideo && minutes == null
+        sleepDeadline = minutes?.let { System.currentTimeMillis() + it * 60_000L }
+        sleepAtVideoEnd = endOfVideo && minutes == null
         _nowPlaying.value = _nowPlaying.value?.withModes()
-        if (sleepAtMs == null && !sleepAtEnd) return
+        if (sleepDeadline == null && !sleepAtVideoEnd) return
         sleepJob = scope.launch {
             while (true) {
                 kotlinx.coroutines.delay(500)
                 val c = controller ?: continue
-                val due = sleepAtMs?.let { System.currentTimeMillis() >= it - 8_000 } ?: false
-                val atEnd = sleepAtEnd && c.duration > 0 && c.duration - c.currentPosition < 1_500
+                val due = sleepDeadline?.let { System.currentTimeMillis() >= it - 8_000 } ?: false
+                val atEnd = sleepAtVideoEnd && c.duration > 0 && c.duration - c.currentPosition < 1_500
                 if (due || atEnd) break
             }
             // Fade out gently over the last few seconds instead of cutting off.
             controller?.let { c ->
                 val start = c.volume
-                if (sleepAtMs != null) for (step in 1..16) {
+                if (sleepDeadline != null) for (step in 1..16) {
                     c.volume = start * (1f - step / 16f)
                     kotlinx.coroutines.delay(500)
                 }
                 c.pause()
                 c.volume = start
             }
-            sleepAtMs = null
-            sleepAtEnd = false
+            sleepDeadline = null
+            sleepAtVideoEnd = false
             _nowPlaying.value = _nowPlaying.value?.withModes()
         }
     }
@@ -241,7 +243,43 @@ object AndroidPlayer : PlayerController {
                 if (reason != null) "$reason Tap to retry." else "Couldn't play this video. Tap to retry."
             },
             speed = p.playbackParameters.speed,
+            captions = textGroups(p).map { g -> g.getTrackFormat(0).let { it.label ?: it.language ?: "Captions" } },
+            captionIndex = textGroups(p).indexOfFirst { it.isSelected }.takeIf { it >= 0 },
         )
+    }
+
+    private fun textGroups(p: Player) = p.currentTracks.groups.filter { it.type == C.TRACK_TYPE_TEXT && it.length > 0 }
+
+    override fun setCaption(index: Int?) = withController {
+        val groups = textGroups(this)
+        val builder = trackSelectionParameters.buildUpon().clearOverridesOfType(C.TRACK_TYPE_TEXT)
+        val group = index?.let { groups.getOrNull(it) }
+        trackSelectionParameters = if (group == null) {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, true).build()
+        } else {
+            builder.setTrackTypeDisabled(C.TRACK_TYPE_TEXT, false)
+                .setOverrideForType(androidx.media3.common.TrackSelectionOverride(group.mediaTrackGroup, 0))
+                .build()
+        }
+    }
+
+    /**
+     * The CC button: captions off if they're on; otherwise on, in the phone's language when there
+     * are some (the uploader's before YouTube's automatic ones), else the first track.
+     */
+    fun toggleCaptions() {
+        val now = _nowPlaying.value ?: return
+        if (now.captionIndex != null) return setCaption(null)
+        if (now.captions.isEmpty()) return
+        val c = controller ?: return
+        val lang = java.util.Locale.getDefault().language
+        val formats = textGroups(c).map { it.getTrackFormat(0) }
+        fun matches(f: androidx.media3.common.Format) = f.language?.startsWith(lang) == true
+        val auto = { f: androidx.media3.common.Format -> f.label.orEmpty().contains("auto-", ignoreCase = true) }
+        val pick = formats.indexOfFirst { matches(it) && !auto(it) }.takeIf { it >= 0 }
+            ?: formats.indexOfFirst { matches(it) }.takeIf { it >= 0 }
+            ?: 0
+        setCaption(pick)
     }
 
     override fun progress(): Float? {

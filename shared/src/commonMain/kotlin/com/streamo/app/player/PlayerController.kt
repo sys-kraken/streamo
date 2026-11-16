@@ -21,6 +21,9 @@ data class NowPlaying(
     val sleepAtMs: Long? = null,
     /** The sleep timer stops playback when this video ends. */
     val sleepAtEnd: Boolean = false,
+    /** Caption tracks this video has (their names), and which one is showing (null: captions off). */
+    val captions: List<String> = emptyList(),
+    val captionIndex: Int? = null,
 )
 
 /** Controls playback. Android: Media3 in a background service (AndroidPlayer); iOS: later. */
@@ -57,6 +60,9 @@ interface PlayerController {
     fun setSleepTimer(minutes: Int?, endOfVideo: Boolean = false) {}
 
     fun seekTo(positionMs: Long) {}
+
+    /** Show caption track [index] of [NowPlaying.captions], or none. */
+    fun setCaption(index: Int?) {}
 }
 
 /** The screens' handle on the player. */

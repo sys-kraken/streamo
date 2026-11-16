@@ -71,6 +71,9 @@ class AndroidPlatformUi(context: Context) : PlatformUi {
                     // The gear opens Streamo's own menu (quality + speed) instead of the default one.
                     findViewById<android.view.View>(androidx.media3.ui.R.id.exo_settings)
                         ?.setOnClickListener { settingsClick?.invoke() }
+                    // CC turns captions on and off in one tap (language and size are in the gear menu).
+                    findViewById<android.view.View>(androidx.media3.ui.R.id.exo_subtitle)
+                        ?.setOnClickListener { AndroidPlayer.toggleCaptions() }
                     // White seek bar, matching the black-and-white look.
                     findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
                         setPlayedColor(android.graphics.Color.WHITE)

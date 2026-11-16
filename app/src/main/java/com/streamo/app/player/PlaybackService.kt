@@ -343,15 +343,7 @@ class PlaybackService : MediaSessionService() {
 
     private fun watchSettings() {
         scope.launch {
-            LibraryStore.settings.collect { s ->
-                audioFx.attach(player.audioSessionId, s)
-                // Captions on: pick the phone's language automatically when a video has it.
-                val lang = if (s.captions) java.util.Locale.getDefault().language else null
-                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
-                    .setPreferredTextLanguage(lang)
-                    .setSelectUndeterminedTextLanguage(false)
-                    .build()
-            }
+            LibraryStore.settings.collect { s -> audioFx.attach(player.audioSessionId, s) }
         }
     }
 
