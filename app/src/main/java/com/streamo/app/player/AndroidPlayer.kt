@@ -132,8 +132,12 @@ object AndroidPlayer : PlayerController {
     }
 
     override fun setAudioOnly(on: Boolean) {
+        if (audioOnly == on) return
         audioOnly = on
         applyVideoTrack()
+        // The picture track restarts from the next keyframe; a seek to the same spot makes it
+        // show straight away instead of staying black until then.
+        if (!on) withController { seekTo(currentPosition) }
         _nowPlaying.value = _nowPlaying.value?.withModes()
     }
 

@@ -61,7 +61,7 @@ fun DownloadSheet(video: VideoItem, onDismiss: () -> Unit) {
 
     fun start(o: DownloadOption) {
         Downloads.enqueue(video, o.audioOnly, o.height)
-        Platform.ui.toast("Downloading… see Library → Downloads")
+        Platform.ui.toast("Downloading… find it in Downloads on the You tab")
         onDismiss()
     }
     // Android 9 and older ask for storage permission before saving to Movies / Music.

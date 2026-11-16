@@ -14,6 +14,9 @@ import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
+import android.widget.LinearLayout
+import com.streamo.app.R
 import android.widget.TextView
 import androidx.annotation.OptIn
 import androidx.media3.common.util.UnstableApi
@@ -27,7 +30,7 @@ import kotlin.math.roundToInt
  *  - double-tap the left or right side: back or forward 10 seconds (taps keep adding up),
  *  - press and hold: 2x speed until you let go,
  *  - in fullscreen, swipe up/down on the left for brightness and on the right for volume.
- * A single tap still shows and hides the player's own controls. Turned off in Settings → Gestures.
+ * A single tap still shows and hides the player's own controls. Turned off in Settings (Player gestures).
  */
 @OptIn(UnstableApi::class)
 class PlayerGestures(private val view: PlayerView) {
@@ -36,12 +39,21 @@ class PlayerGestures(private val view: PlayerView) {
 
     private val handler = Handler(Looper.getMainLooper())
     private val audio = view.context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
-    private val label = TextView(view.context).apply {
+    private val density = view.resources.displayMetrics.density
+    private val icon = ImageView(view.context)
+    private val text = TextView(view.context).apply {
         setTextColor(android.graphics.Color.WHITE)
         setTextSize(TypedValue.COMPLEX_UNIT_SP, 15f)
-        val pad = (12 * resources.displayMetrics.density).roundToInt()
+    }
+    /** The little pill in the middle of the video: an icon and a value ("10s", "2x", "60%"). */
+    private val label = LinearLayout(view.context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        val pad = (12 * density).roundToInt()
         setPadding(pad * 2, pad, pad * 2, pad)
-        background = GradientDrawable().apply { cornerRadius = 40f * resources.displayMetrics.density / 2; setColor(0x99000000.toInt()) }
+        background = GradientDrawable().apply { cornerRadius = 24 * density; setColor(0x99000000.toInt()) }
+        addView(icon, LinearLayout.LayoutParams((22 * density).roundToInt(), (22 * density).roundToInt()).apply { marginEnd = (8 * density).roundToInt() })
+        addView(text)
         visibility = View.GONE
     }
     private val hideLabel = Runnable { label.visibility = View.GONE }
@@ -67,7 +79,7 @@ class PlayerGestures(private val view: PlayerView) {
             val forward = e.x > view.width / 2f
             seekTotal = if ((seekTotal > 0) == forward && seekTotal != 0) seekTotal + 10 else if (forward) 10 else -10
             p.seekTo((p.currentPosition + if (forward) 10_000 else -10_000).coerceAtLeast(0))
-            show(if (forward) "» ${seekTotal}s" else "« ${-seekTotal}s")
+            show(if (forward) R.drawable.ic_gesture_forward else R.drawable.ic_gesture_rewind, "${abs(seekTotal)}s")
             handler.postDelayed({ seekTotal = 0 }, 900)
             return true
         }
@@ -85,7 +97,7 @@ class PlayerGestures(private val view: PlayerView) {
             holding = true
             speedBefore = p.playbackParameters.speed
             p.setPlaybackSpeed(2f)
-            show("2x ▸▸", stay = true)
+            show(R.drawable.ic_gesture_forward, "2x", stay = true)
         }
     })
 
@@ -120,11 +132,11 @@ class PlayerGestures(private val view: PlayerView) {
                     val value = (startValue + (swipeStart - e.y) / (view.height * 0.8f)).coerceIn(0f, 1f)
                     if (swiping == "brightness") {
                         activity()?.window?.let { w -> w.attributes = w.attributes.apply { screenBrightness = value.coerceAtLeast(0.01f) } }
-                        show("☀ ${(value * 100).roundToInt()}%", stay = true)
+                        show(R.drawable.ic_gesture_brightness, "${(value * 100).roundToInt()}%", stay = true)
                     } else {
                         val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
                         audio.setStreamVolume(AudioManager.STREAM_MUSIC, (value * max).roundToInt(), 0)
-                        show("🔊 ${(value * 100).roundToInt()}%", stay = true)
+                        show(R.drawable.ic_gesture_volume, "${(value * 100).roundToInt()}%", stay = true)
                     }
                     return true
                 }
@@ -152,8 +164,9 @@ class PlayerGestures(private val view: PlayerView) {
         return null
     }
 
-    private fun show(text: String, stay: Boolean = false) {
-        label.text = text
+    private fun show(iconRes: Int, value: String, stay: Boolean = false) {
+        icon.setImageResource(iconRes)
+        text.text = value
         label.visibility = View.VISIBLE
         handler.removeCallbacks(hideLabel)
         if (!stay) hideSoon()

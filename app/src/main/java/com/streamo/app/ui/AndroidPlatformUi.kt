@@ -27,6 +27,9 @@ import com.streamo.app.player.SponsorState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
 
+/** The extra pieces Streamo adds to each PlayerView. */
+private class ViewParts(val gestures: PlayerGestures, val cover: AudioOnlyCover)
+
 /** Android's [PlatformUi]: Media3's PlayerView, the share sheet, toasts and the APK updater. */
 class AndroidPlatformUi(context: Context) : PlatformUi {
     private val context = context.applicationContext
@@ -78,20 +81,24 @@ class AndroidPlatformUi(context: Context) : PlatformUi {
                         setAdMarkerColor(0xFFAAAAAA.toInt())
                         setPlayedAdMarkerColor(0x88FFFFFF.toInt())
                     }
+                    // Audio-only picture: in the overlay layer, under the controls.
+                    val cover = AudioOnlyCover(ctx)
+                    overlayFrameLayout?.addView(cover, 0, android.widget.FrameLayout.LayoutParams(-1, -1))
                     val gestures = PlayerGestures(this)
-                    tag = gestures
+                    tag = ViewParts(gestures, cover)
                     setOnTouchListener { _, e -> gestures.onTouch(e) }
                 }
             },
             update = { view ->
                 view.player = player
                 view.useController = controls
-                (view.tag as? PlayerGestures)?.fullscreen = fullscreen
+                val parts = view.tag as? ViewParts
+                parts?.gestures?.fullscreen = fullscreen
+                parts?.cover?.update(audioOnly, cover, full = controls)
                 // Where SponsorBlock segments start, marked on the seek bar.
                 val marks = segments.map { it.startMs }.toLongArray()
                 view.setExtraAdGroupMarkers(marks, BooleanArray(marks.size))
-                view.defaultArtwork = cover
-                view.artworkDisplayMode = PlayerView.ARTWORK_DISPLAY_MODE_FIT
+                view.artworkDisplayMode = PlayerView.ARTWORK_DISPLAY_MODE_OFF
                 view.subtitleView?.apply {
                     setApplyEmbeddedStyles(false)
                     setApplyEmbeddedFontSizes(false)

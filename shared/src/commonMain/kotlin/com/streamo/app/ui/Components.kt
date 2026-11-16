@@ -225,7 +225,7 @@ fun Thumbnail(video: VideoItem, modifier: Modifier = Modifier, corner: Dp = 0.dp
             contentScale = ContentScale.Crop,
             modifier = Modifier.fillMaxSize(),
         )
-        val badge = if (video.isLive) "● LIVE" else formatDuration(video.durationSec)
+        val badge = if (video.isLive) "LIVE" else formatDuration(video.durationSec)
         if (badge.isNotEmpty()) {
             Text(
                 badge,
