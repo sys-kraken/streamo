@@ -214,7 +214,10 @@ object IosPlayer : PlayerController {
                 show(item, startAt)
                 if (LibraryStore.settings.value.sponsorBlock) {
                     launch {
+                        // Only the categories set to "Skip" (the iPhone has no Skip button yet).
+                        val choices = LibraryStore.settings.value.sponsorActions
                         val found = runCatching { sponsorBlock.segments(video.url) }.getOrDefault(emptyList())
+                            .filter { !it.isHighlight && com.streamo.app.data.SponsorBlock.action(choices, it.category) == "skip" }
                         if (current?.video?.url == details.item.url) segments = found
                         log("sponsor segments: ${found.size}")
                     }

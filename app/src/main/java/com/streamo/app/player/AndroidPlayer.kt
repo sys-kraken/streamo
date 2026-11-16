@@ -16,6 +16,7 @@ import com.streamo.app.data.VideoItem
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
 
 /** Android's [PlayerController]: the app's handle on [PlaybackService]'s player. */
 object AndroidPlayer : PlayerController {
@@ -25,6 +26,18 @@ object AndroidPlayer : PlayerController {
     /** Set by [close]: the player's last update about the old video must not reopen the mini player. */
     private var closed = false
     private var pending: (MediaController.() -> Unit)? = null
+    private val scope = kotlinx.coroutines.MainScope()
+
+    /** Audio-only mode (kept from video to video) and whether the app is on screen. */
+    private var audioOnly = false
+    private var screenVisible = true
+
+    private var sleepAtMs: Long? = null
+    private var sleepAtEnd = false
+    private var sleepJob: kotlinx.coroutines.Job? = null
+
+    /** Carries the player-wide choices (audio only, sleep timer) into a fresh [NowPlaying]. */
+    private fun NowPlaying.withModes() = copy(audioOnly = audioOnly, sleepAtMs = sleepAtMs, sleepAtEnd = sleepAtEnd)
 
     private val _nowPlaying = MutableStateFlow<NowPlaying?>(null)
     override val nowPlaying: StateFlow<NowPlaying?> = _nowPlaying.asStateFlow()
@@ -52,7 +65,7 @@ object AndroidPlayer : PlayerController {
         closed = false
         if (!fromQueue) PlayQueue.clear() else PlayQueue.moveTo(video.url)
         NewPipeRepo.prefetch(video.url)
-        _nowPlaying.value = NowPlaying(video)
+        _nowPlaying.value = NowPlaying(video).withModes()
         withController {
             stop() // silence the previous video right away instead of while the new one loads
             setMediaItem(requestItem(video, maxHeight = 0))
@@ -64,7 +77,7 @@ object AndroidPlayer : PlayerController {
     override fun playLocal(video: VideoItem, fileUri: String) {
         closed = false
         PlayQueue.clear()
-        _nowPlaying.value = NowPlaying(video)
+        _nowPlaying.value = NowPlaying(video).withModes()
         withController {
             stop()
             setMediaItem(
@@ -104,6 +117,7 @@ object AndroidPlayer : PlayerController {
 
     override fun close() {
         closed = true
+        setSleepTimer(null)
         PlayQueue.clear()
         _nowPlaying.value = null
         withController {
@@ -112,10 +126,54 @@ object AndroidPlayer : PlayerController {
         }
     }
 
-    override fun setVideoEnabled(enabled: Boolean) = withController {
+    override fun setVideoEnabled(enabled: Boolean) {
+        screenVisible = enabled
+        applyVideoTrack()
+    }
+
+    override fun setAudioOnly(on: Boolean) {
+        audioOnly = on
+        applyVideoTrack()
+        _nowPlaying.value = _nowPlaying.value?.withModes()
+    }
+
+    /** The picture is downloaded only while the app is on screen and audio-only is off. */
+    private fun applyVideoTrack() = withController {
         trackSelectionParameters = trackSelectionParameters.buildUpon()
-            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !enabled)
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, !screenVisible || audioOnly)
             .build()
+    }
+
+    override fun seekTo(positionMs: Long) = withController { seekTo(positionMs) }
+
+    override fun setSleepTimer(minutes: Int?, endOfVideo: Boolean) {
+        sleepJob?.cancel()
+        sleepAtMs = minutes?.let { System.currentTimeMillis() + it * 60_000L }
+        sleepAtEnd = endOfVideo && minutes == null
+        _nowPlaying.value = _nowPlaying.value?.withModes()
+        if (sleepAtMs == null && !sleepAtEnd) return
+        sleepJob = scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(500)
+                val c = controller ?: continue
+                val due = sleepAtMs?.let { System.currentTimeMillis() >= it - 8_000 } ?: false
+                val atEnd = sleepAtEnd && c.duration > 0 && c.duration - c.currentPosition < 1_500
+                if (due || atEnd) break
+            }
+            // Fade out gently over the last few seconds instead of cutting off.
+            controller?.let { c ->
+                val start = c.volume
+                if (sleepAtMs != null) for (step in 1..16) {
+                    c.volume = start * (1f - step / 16f)
+                    kotlinx.coroutines.delay(500)
+                }
+                c.pause()
+                c.volume = start
+            }
+            sleepAtMs = null
+            sleepAtEnd = false
+            _nowPlaying.value = _nowPlaying.value?.withModes()
+        }
     }
 
     override fun pause() = withController { pause() }
@@ -159,10 +217,10 @@ object AndroidPlayer : PlayerController {
         }
         when {
             resolved != null && (current == null || current.video.url == resolved.url) ->
-                _nowPlaying.value = (current ?: NowPlaying(resolved)).copy(video = resolved)
+                _nowPlaying.value = (current ?: NowPlaying(resolved).withModes()).copy(video = resolved)
             // The player moved on by itself (Next button, or the video ended and up next started).
             resolved != null && p.currentMediaItem?.mediaId == resolved.url ->
-                _nowPlaying.value = NowPlaying(resolved)
+                _nowPlaying.value = NowPlaying(resolved).withModes()
             current == null -> return
         }
         val now = _nowPlaying.value ?: return

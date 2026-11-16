@@ -26,6 +26,8 @@ import com.streamo.app.R
 import com.streamo.app.StreamoApp
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.data.Recommender
+import com.streamo.app.data.SponsorBlock
+import androidx.media3.common.MimeTypes
 import com.streamo.app.data.SkipSegment
 import com.streamo.app.data.VideoItem
 import com.streamo.app.data.NewPipeRepo
@@ -96,6 +98,7 @@ class PlaybackService : MediaSessionService() {
             }
         )
         startSponsorWatcher()
+        watchSettings()
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo) = session
@@ -109,6 +112,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        audioFx.release()
         savePosition(force = true)
         scope.cancel()
         session.release()
@@ -159,10 +163,19 @@ class PlaybackService : MediaSessionService() {
             .setExtras(extras)
             .build()
 
+        val captions = streams.subtitles.map { t ->
+            MediaItem.SubtitleConfiguration.Builder(Uri.parse(t.url))
+                .setMimeType(MimeTypes.TEXT_VTT)
+                .setLanguage(t.language)
+                .setLabel(t.label)
+                .setId(t.url)
+                .build()
+        }
         return item.buildUpon()
             .setUri(streams.videoUrl ?: streams.combinedUrl)
             .setMimeType(if (streams.isHls) "application/x-mpegURL" else null)
             .setMediaMetadata(metadata)
+            .setSubtitleConfigurations(captions)
             .setTag(streams)
             .build()
     }
@@ -192,6 +205,7 @@ class PlaybackService : MediaSessionService() {
     private val playerListener = object : Player.Listener {
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             segments = emptyList()
+            SponsorState.setSegments(emptyList())
             // The previous video played to its end: remember it as fully watched.
             if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && player.currentMediaItemIndex > 0) {
                 val prev = player.getMediaItemAt(player.currentMediaItemIndex - 1).mediaId
@@ -211,10 +225,19 @@ class PlaybackService : MediaSessionService() {
             if (LibraryStore.settings.value.sponsorBlock) {
                 val url = item.mediaId
                 scope.launch {
+                    val choices = LibraryStore.settings.value.sponsorActions
                     val found = StreamoApp.sponsorBlock.segments(url)
-                    if (player.currentMediaItem?.mediaId == url) segments = found
+                        .filter { SponsorBlock.action(choices, it.category) != "off" }
+                    if (player.currentMediaItem?.mediaId == url) {
+                        segments = found
+                        SponsorState.setSegments(found)
+                    }
                 }
             }
+        }
+
+        override fun onAudioSessionIdChanged(audioSessionId: Int) {
+            audioFx.attach(audioSessionId, LibraryStore.settings.value)
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
@@ -295,20 +318,41 @@ class PlaybackService : MediaSessionService() {
                 delay(400)
                 // Every ~2 s, note how far into the video playback is (for resume and the thumbnail bar).
                 if (player.isPlaying && ++ticks % 5 == 0) savePosition()
-                if (!player.isPlaying || segments.isEmpty()) continue
+                if (!player.isPlaying || segments.isEmpty()) { SponsorState.setPrompt(null); continue }
                 val pos = player.currentPosition
-                val hit = segments.firstOrNull { pos >= it.startMs && pos < it.endMs - 500 } ?: continue
-                player.seekTo(hit.endMs)
-                Toast.makeText(this@PlaybackService, "Skipped ${label(hit.category)}", Toast.LENGTH_SHORT).show()
+                val choices = LibraryStore.settings.value.sponsorActions
+                // The best part of the video: offer a jump to it near the start.
+                val highlight = segments.firstOrNull { it.isHighlight && pos < 20_000 && pos < it.startMs - 2_000 }
+                val inside = segments.firstOrNull { !it.isHighlight && pos >= it.startMs && pos < it.endMs - 500 }
+                when {
+                    inside != null && SponsorBlock.action(choices, inside.category) == "skip" -> {
+                        player.seekTo(inside.endMs)
+                        val name = SponsorBlock.NAMES[inside.category] ?: inside.category
+                        Toast.makeText(this@PlaybackService, "Skipped ${name.lowercase()}", Toast.LENGTH_SHORT).show()
+                    }
+                    inside != null -> SponsorState.setPrompt(inside) // "ask": the screen shows a Skip button
+                    else -> SponsorState.setPrompt(highlight)
+                }
             }
         }
     }
 
-    private fun label(category: String) = when (category) {
-        "sponsor" -> "sponsor"
-        "selfpromo" -> "self-promotion"
-        "interaction" -> "subscribe reminder"
-        else -> category
+    // ---------- Sound effects, captions ----------
+
+    private val audioFx = AudioFx()
+
+    private fun watchSettings() {
+        scope.launch {
+            LibraryStore.settings.collect { s ->
+                audioFx.attach(player.audioSessionId, s)
+                // Captions on: pick the phone's language automatically when a video has it.
+                val lang = if (s.captions) java.util.Locale.getDefault().language else null
+                player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+                    .setPreferredTextLanguage(lang)
+                    .setSelectUndeterminedTextLanguage(false)
+                    .build()
+            }
+        }
     }
 
     companion object {

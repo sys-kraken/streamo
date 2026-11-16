@@ -15,6 +15,12 @@ data class NowPlaying(
     /** False until this video's first moment actually plays; the thumbnail is shown until then. */
     val started: Boolean = false,
     val speed: Float = 1f,
+    /** Only the sound is playing (the picture isn't downloaded). */
+    val audioOnly: Boolean = false,
+    /** When the sleep timer stops playback (milliseconds since 1970), or null. */
+    val sleepAtMs: Long? = null,
+    /** The sleep timer stops playback when this video ends. */
+    val sleepAtEnd: Boolean = false,
 )
 
 /** Controls playback. Android: Media3 in a background service (AndroidPlayer); iOS: later. */
@@ -43,6 +49,14 @@ interface PlayerController {
 
     /** How far into the current video, from 0 to 1, or null when not known yet. */
     fun progress(): Float?
+
+    /** Play only the sound, to save data and battery. */
+    fun setAudioOnly(on: Boolean) {}
+
+    /** Stop playback after [minutes] (null: off), or at the end of the current video. */
+    fun setSleepTimer(minutes: Int?, endOfVideo: Boolean = false) {}
+
+    fun seekTo(positionMs: Long) {}
 }
 
 /** The screens' handle on the player. */

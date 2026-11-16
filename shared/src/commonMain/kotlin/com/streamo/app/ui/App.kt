@@ -104,6 +104,7 @@ fun StreamoRoot(state: AppState, landscape: Boolean, onPip: () -> Unit) {
         openHistory = { navController.navigate("history") { launchSingleTop = true } },
         openLiked = { navController.navigate("liked") { launchSingleTop = true } },
         openInterests = { navController.navigate("interests") { launchSingleTop = true } },
+        openEqualizer = { navController.navigate("equalizer") { launchSingleTop = true } },
         back = { navController.popBackStack() },
     )
 
@@ -168,6 +169,7 @@ private fun AppNavHost(navController: NavHostController, nav: Nav, state: AppSta
         composable("history") { HistoryScreen(nav, pad) }
         composable("liked") { LikedScreen(nav, pad) }
         composable("interests") { InterestsScreen(nav, pad) }
+        composable("equalizer") { EqualizerScreen(nav, pad) }
         composable("downloads") { DownloadsScreen(nav, onPlayed = { state.watchExpanded = true }, pad) }
         composable("playlist/{id}") { entry -> LocalPlaylistScreen(entry.arg("id"), nav, pad) }
         composable("ytplaylist/{url}") { entry ->

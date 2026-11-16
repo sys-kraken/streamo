@@ -61,6 +61,21 @@ private val dark = darkColorScheme(
     onError = Black,
 )
 
+/** YouTube's softer dark grey, for people who find pure black harsh. Still no colour. */
+private val dim = dark.copy(
+    background = Color(0xFF0F0F0F),
+    surface = Color(0xFF0F0F0F),
+    surfaceVariant = Color(0xFF2A2A2A),
+    surfaceContainerLowest = Color(0xFF0F0F0F),
+    surfaceContainerLow = Color(0xFF161616),
+    surfaceContainer = Color(0xFF1E1E1E),
+    surfaceContainerHigh = Color(0xFF272727),
+    surfaceContainerHighest = Color(0xFF303030),
+    onSurfaceVariant = Color(0xFFB0B0B0),
+    primaryContainer = Color(0xFF2A2A2A),
+    outlineVariant = Color(0xFF2A2A2A),
+)
+
 private val light = lightColorScheme(
     primary = Black,
     onPrimary = White,
@@ -122,7 +137,12 @@ fun isDarkTheme(): Boolean {
 
 @Composable
 fun StreamoTheme(darkTheme: Boolean = isDarkTheme(), content: @Composable () -> Unit) {
-    val colors = if (darkTheme) dark else light
+    val settings by LibraryStore.settings.collectAsState()
+    val colors = when {
+        !darkTheme -> light
+        settings.darkStyle == "dim" -> dim
+        else -> dark
+    }
     MaterialTheme(colorScheme = colors, typography = typography) {
         androidx.compose.runtime.CompositionLocalProvider(LocalDarkTheme provides darkTheme) {
             // Surface gives all text the "on background" color by default.

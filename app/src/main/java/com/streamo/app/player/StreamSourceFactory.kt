@@ -28,6 +28,8 @@ class StreamSourceFactory(context: Context, private val dataSource: DataSource.F
     // Anything else (downloaded files: content:// and file:// addresses) needs a reader that
     // understands the phone's own storage, not just the internet.
     private val fallback = DefaultMediaSourceFactory(DefaultDataSource.Factory(context, dataSource))
+    // Adds the item's caption tracks (subtitle configurations) next to the picture.
+    private val withCaptions = DefaultMediaSourceFactory(dataSource)
 
     override fun createMediaSource(mediaItem: MediaItem): MediaSource {
         val streams = mediaItem.localConfiguration?.tag as? StreamChoice
@@ -36,16 +38,17 @@ class StreamSourceFactory(context: Context, private val dataSource: DataSource.F
         if (streams.isHls) return hls.createMediaSource(mediaItem)
         val videoUrl = streams.videoUrl
         val audioUrl = streams.audioUrl
-        if (videoUrl == null || audioUrl == null) return progressive.createMediaSource(mediaItem)
+        if (videoUrl == null || audioUrl == null) return withCaptions.createMediaSource(mediaItem)
 
-        // The picture source keeps the original item so titles/artwork stay attached to playback.
-        val video = progressive.createMediaSource(mediaItem.buildUpon().setUri(videoUrl).build())
+        // The picture source keeps the original item so titles/artwork (and captions) stay attached.
+        val video = withCaptions.createMediaSource(mediaItem.buildUpon().setUri(videoUrl).setMimeType(null).build())
         val audio = progressive.createMediaSource(MediaItem.fromUri(audioUrl))
         return MergingMediaSource(/* adjustPeriodTimeOffsets = */ true, /* clipDurations = */ true, video, audio)
     }
 
     override fun setDrmSessionManagerProvider(provider: DrmSessionManagerProvider): MediaSource.Factory {
         progressive.setDrmSessionManagerProvider(provider)
+        withCaptions.setDrmSessionManagerProvider(provider)
         hls.setDrmSessionManagerProvider(provider)
         fallback.setDrmSessionManagerProvider(provider)
         return this
@@ -53,6 +56,7 @@ class StreamSourceFactory(context: Context, private val dataSource: DataSource.F
 
     override fun setLoadErrorHandlingPolicy(policy: LoadErrorHandlingPolicy): MediaSource.Factory {
         progressive.setLoadErrorHandlingPolicy(policy)
+        withCaptions.setLoadErrorHandlingPolicy(policy)
         hls.setLoadErrorHandlingPolicy(policy)
         fallback.setLoadErrorHandlingPolicy(policy)
         return this

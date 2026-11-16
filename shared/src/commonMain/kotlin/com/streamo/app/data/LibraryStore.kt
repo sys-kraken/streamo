@@ -38,6 +38,27 @@ data class Settings(
     val resumePlayback: Boolean = true,
     /** How much of Home is new channels and topics: 0 none, 1 some, 2 more. */
     val discovery: Int = 1,
+    /** Dark theme flavour: "black" (pure black, best on AMOLED screens) or "dim" (YouTube's dark grey). */
+    val darkStyle: String = "black",
+    /** "best": highest-quality sound YouTube offers (Opus ~160 kbps); "saver": smallest, to save data. */
+    val audioQuality: String = "best",
+    val eqEnabled: Boolean = false,
+    /** A preset name from [com.streamo.app.player.EqPresets], or "Custom" to use [eqCustom]. */
+    val eqPreset: String = "Flat",
+    /** Custom equalizer gains in decibels, one per band of [com.streamo.app.player.EqPresets.FREQUENCIES]. */
+    val eqCustom: List<Float> = emptyList(),
+    /** Keeps loud and quiet videos at a similar volume. */
+    val volumeLeveling: Boolean = false,
+    /** SponsorBlock: what to do per category, "skip", "ask" or "off". Missing = the category's default. */
+    val sponsorActions: Map<String, String> = emptyMap(),
+    /** Double-tap to skip, hold for 2x, swipe for brightness and volume (in fullscreen). */
+    val gestures: Boolean = true,
+    /** Show captions automatically when there are some in the phone's language. */
+    val captions: Boolean = false,
+    /** "small", "normal" or "large". */
+    val captionSize: String = "normal",
+    /** Offer YouTube's automatic translation of captions into the phone's language. */
+    val captionTranslate: Boolean = true,
 )
 
 /** How far into a video you got, and when you last watched it. */

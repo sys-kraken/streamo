@@ -39,6 +39,10 @@ import androidx.compose.material.icons.filled.PictureInPictureAlt
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Bedtime
+import androidx.compose.material.icons.filled.Headphones
+import androidx.compose.material.icons.filled.SkipNext
+import com.streamo.app.player.SponsorState
 import androidx.compose.material.icons.filled.ThumbUp
 import androidx.compose.material.icons.outlined.ThumbUp
 import androidx.compose.material3.CircularProgressIndicator
@@ -108,7 +112,32 @@ fun PlayerSurface(
         } else if (state != null && state.isBuffering && !state.isPlaying && controls) {
             CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
         }
+        // SponsorBlock: "Skip sponsor" for segments set to Ask, "Jump to highlight" near the start.
+        val prompt by SponsorState.prompt.collectAsState()
+        val p = prompt
+        if (controls && p != null && state?.error == null) {
+            val name = com.streamo.app.data.SponsorBlock.NAMES[p.category] ?: "segment"
+            Row(
+                Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 56.dp)
+                    .background(Color(0xE6FFFFFF), RoundedCornerShape(50))
+                    .clickable { PlayerConnection.seekTo(if (p.isHighlight) p.startMs else p.endMs); SponsorState.setPrompt(null) }
+                    .padding(horizontal = 14.dp, vertical = 8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Text(if (p.isHighlight) "Jump to highlight" else "Skip ${name.lowercase()}", color = Color.Black,
+                    style = MaterialTheme.typography.labelLarge)
+                Spacer(Modifier.width(4.dp))
+                Icon(Icons.Default.SkipNext, null, Modifier.size(18.dp), tint = Color.Black)
+            }
+        }
     }
+}
+
+/** "Off", "12 min left" or "End of video", for the sleep timer row. */
+private fun sleepLabel(now: NowPlaying): String = when {
+    now.sleepAtEnd -> "End of video"
+    now.sleepAtMs != null -> "${((now.sleepAtMs - com.streamo.app.nowMillis()) / 60_000 + 1).coerceAtLeast(1)} min left"
+    else -> "Off"
 }
 
 @Composable
@@ -324,6 +353,21 @@ fun PlayerSettingsSheet(now: NowPlaying, onDismiss: () -> Unit) {
                 "main" -> {
                     SheetRow(Icons.Default.HighQuality, "Quality", if (now.height > 0) "${now.height}p" else "Auto") { page = "quality" }
                     SheetRow(Icons.Default.Speed, "Playback speed", if (now.speed == 1f) "Normal" else "${now.speed}x") { page = "speed" }
+                    SheetRow(Icons.Default.Headphones, "Audio only", if (now.audioOnly) "On" else "Off") {
+                        PlayerConnection.setAudioOnly(!now.audioOnly); onDismiss()
+                    }
+                    SheetRow(Icons.Default.Bedtime, "Sleep timer", sleepLabel(now)) { page = "sleep" }
+                }
+                "sleep" -> {
+                    SheetTitle("Sleep timer") { page = "main" }
+                    SheetChoice("Off", now.sleepAtMs == null && !now.sleepAtEnd) { PlayerConnection.setSleepTimer(null); onDismiss() }
+                    listOf(5, 10, 15, 30, 45, 60, 90).forEach { m ->
+                        SheetChoice(if (m < 60) "$m minutes" else if (m == 60) "1 hour" else "1 hour 30 minutes", false) {
+                            PlayerConnection.setSleepTimer(m); onDismiss()
+                            Platform.ui.toast("Playback will stop in ${if (m < 60) "$m minutes" else if (m == 60) "1 hour" else "1.5 hours"}.")
+                        }
+                    }
+                    SheetChoice("End of this video", now.sleepAtEnd) { PlayerConnection.setSleepTimer(null, endOfVideo = true); onDismiss() }
                 }
                 "quality" -> {
                     SheetTitle("Quality") { page = "main" }

@@ -20,7 +20,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
+import coil3.asDrawable
+import com.streamo.app.data.LibraryStore
 import com.streamo.app.player.AndroidPlayer
+import com.streamo.app.player.SponsorState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.setValue
 
 /** Android's [PlatformUi]: Media3's PlayerView, the share sheet, toasts and the APK updater. */
 class AndroidPlatformUi(context: Context) : PlatformUi {
@@ -38,6 +43,19 @@ class AndroidPlatformUi(context: Context) : PlatformUi {
         val player by AndroidPlayer.player.collectAsState()
         val now by AndroidPlayer.nowPlaying.collectAsState()
         val settingsClick by rememberUpdatedState(onSettings)
+        val segments by SponsorState.segments.collectAsState()
+        val settings by LibraryStore.settings.collectAsState()
+        val audioOnly = now?.audioOnly == true
+        val thumbnail = now?.video?.thumbnail
+        // Audio only: show the video's picture instead of a black box.
+        var cover by remember { mutableStateOf<android.graphics.drawable.Drawable?>(null) }
+        LaunchedEffect(audioOnly, thumbnail) {
+            cover = if (!audioOnly || thumbnail == null) null else runCatching<android.graphics.drawable.Drawable?> {
+                val loader = coil3.SingletonImageLoader.get(context)
+                val result = loader.execute(coil3.request.ImageRequest.Builder(context).data(thumbnail).build())
+                result.image?.asDrawable(context.resources)
+            }.getOrNull()
+        }
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
@@ -56,12 +74,39 @@ class AndroidPlatformUi(context: Context) : PlatformUi {
                         setScrubberColor(android.graphics.Color.WHITE)
                         setBufferedColor(0x73FFFFFF)
                         setUnplayedColor(0x33FFFFFF)
+                        // SponsorBlock segments show as grey marks.
+                        setAdMarkerColor(0xFFAAAAAA.toInt())
+                        setPlayedAdMarkerColor(0x88FFFFFF.toInt())
                     }
+                    val gestures = PlayerGestures(this)
+                    tag = gestures
+                    setOnTouchListener { _, e -> gestures.onTouch(e) }
                 }
             },
             update = { view ->
                 view.player = player
                 view.useController = controls
+                (view.tag as? PlayerGestures)?.fullscreen = fullscreen
+                // Where SponsorBlock segments start, marked on the seek bar.
+                val marks = segments.map { it.startMs }.toLongArray()
+                view.setExtraAdGroupMarkers(marks, BooleanArray(marks.size))
+                view.defaultArtwork = cover
+                view.artworkDisplayMode = PlayerView.ARTWORK_DISPLAY_MODE_FIT
+                view.subtitleView?.apply {
+                    setApplyEmbeddedStyles(false)
+                    setApplyEmbeddedFontSizes(false)
+                    setFractionalTextSize(
+                        androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * when (settings.captionSize) {
+                            "small" -> 0.8f; "large" -> 1.35f; else -> 1f
+                        },
+                    )
+                    setStyle(
+                        androidx.media3.ui.CaptionStyleCompat(
+                            android.graphics.Color.WHITE, 0xB3000000.toInt(), android.graphics.Color.TRANSPARENT,
+                            androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE, android.graphics.Color.BLACK, null,
+                        ),
+                    )
+                }
                 view.keepScreenOn = now?.isPlaying == true // screen stays on while watching
                 view.setFullscreenButtonState(fullscreen)
                 if (onFullscreen != null) view.setFullscreenButtonClickListener { onFullscreen() }
