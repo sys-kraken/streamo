@@ -19,6 +19,14 @@ class PlayerExtrasTest {
     }
 
     @Test
+    fun rollingCaptionsShowEachLineOnce() {
+        // What YouTube's auto captions look like: the previous line repeated in the next cue.
+        assertEquals("Yeaaah!\nI good. I good.", cleanCaptionLines(listOf("Yeaaah!\nI good. I good.", "I good. I good.")))
+        assertEquals("b\nc", cleanCaptionLines(listOf("a\nb", "b\nc")))
+        assertEquals("", cleanCaptionLines(listOf(" ", "")))
+    }
+
+    @Test
     fun sponsorBlockDefaultsKeepOldBehaviour() {
         assertEquals("skip", SponsorBlock.action(emptyMap(), "sponsor"))
         assertEquals("off", SponsorBlock.action(emptyMap(), "intro"))

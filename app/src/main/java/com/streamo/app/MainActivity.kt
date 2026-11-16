@@ -97,6 +97,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        com.streamo.app.ui.AndroidPlatformUi.currentActivity = java.lang.ref.WeakReference(this)
         PlayerConnection.setVideoEnabled(true)
     }
 

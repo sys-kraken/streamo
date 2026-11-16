@@ -111,7 +111,6 @@ class Nav(
     val openHistory: () -> Unit,
     val openLiked: () -> Unit,
     val openInterests: () -> Unit,
-    val openEqualizer: () -> Unit,
     val back: () -> Unit,
 )
 
@@ -845,10 +844,11 @@ fun SettingsScreen(nav: Nav, contentPadding: PaddingValues) {
             ChoiceRow(label, settings.audioQuality == value) { LibraryStore.updateSettings { it.copy(audioQuality = value) } }
         }
         item {
-            ActionRow("Equalizer", if (settings.eqEnabled) "On · ${settings.eqPreset}" else "Off", nav.openEqualizer)
-            ToggleRow("Volume leveling", "Keeps loud and quiet videos at a similar volume, like Spotify's \"Normalize volume\".", settings.volumeLeveling) { on ->
-                LibraryStore.updateSettings { it.copy(volumeLeveling = on) }
-            }
+            Text(
+                "Equalizer and volume leveling are in the gear menu on any video (Sound).",
+                Modifier.padding(horizontal = 16.dp, vertical = 6.dp),
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
         }
 
         item {

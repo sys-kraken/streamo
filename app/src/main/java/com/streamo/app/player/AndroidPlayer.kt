@@ -119,6 +119,7 @@ object AndroidPlayer : PlayerController {
 
     override fun close() {
         closed = true
+        _captionText.value = ""
         setSleepTimer(null)
         PlayQueue.clear()
         _nowPlaying.value = null
@@ -210,7 +211,20 @@ object AndroidPlayer : PlayerController {
         override fun onEvents(player: Player, events: Player.Events) {
             syncFromController(player)
         }
+
+        override fun onCues(cueGroup: androidx.media3.common.text.CueGroup) {
+            _captionText.value = cleanCaptionLines(cueGroup.cues.mapNotNull { it.text?.toString() })
+        }
     }
+
+    private val _captionText = MutableStateFlow("")
+    override val captionText: StateFlow<String> = _captionText.asStateFlow()
+
+    override fun positionMs(): Long = controller?.currentPosition ?: 0
+    override fun durationMs(): Long = controller?.duration?.takeIf { it > 0 } ?: 0
+    override fun bufferedMs(): Long = controller?.bufferedPosition ?: 0
+    override fun next() = withController { seekToNext() }
+    override fun previous() = withController { seekToPrevious() }
 
     private fun syncFromController(p: Player) {
         if (closed) return
@@ -267,7 +281,7 @@ object AndroidPlayer : PlayerController {
      * The CC button: captions off if they're on; otherwise on, in the phone's language when there
      * are some (the uploader's before YouTube's automatic ones), else the first track.
      */
-    fun toggleCaptions() {
+    override fun toggleCaptions() {
         val now = _nowPlaying.value ?: return
         if (now.captionIndex != null) return setCaption(null)
         if (now.captions.isEmpty()) return

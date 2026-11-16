@@ -46,6 +46,9 @@ import androidx.navigation.NavBackStackEntry
 import androidx.navigation.NavHostController
 import androidx.navigation.NavType
 import androidx.navigation.compose.NavHost
+import androidx.navigation.NavGraphBuilder
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
@@ -104,7 +107,6 @@ fun StreamoRoot(state: AppState, landscape: Boolean, onPip: () -> Unit) {
         openHistory = { navController.navigate("history") { launchSingleTop = true } },
         openLiked = { navController.navigate("liked") { launchSingleTop = true } },
         openInterests = { navController.navigate("interests") { launchSingleTop = true } },
-        openEqualizer = { navController.navigate("equalizer") { launchSingleTop = true } },
         back = { navController.popBackStack() },
     )
 
@@ -149,33 +151,49 @@ fun StreamoRoot(state: AppState, landscape: Boolean, onPip: () -> Unit) {
     }
 }
 
+private val tabs = setOf("home", "subs", "library")
+
+/** Gives a page an opaque background so pages never blend into each other during transitions. */
+private fun NavGraphBuilder.page(route: String, arguments: List<androidx.navigation.NamedNavArgument> = emptyList(), content: @Composable (NavBackStackEntry) -> Unit) {
+    composable(route, arguments = arguments) { entry ->
+        Box(Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) { content(entry) }
+    }
+}
+
 @Composable
 private fun AppNavHost(navController: NavHostController, nav: Nav, state: AppState) {
     val pad = PaddingValues()
     NavHost(
         navController,
         startDestination = "home",
-        // A very short fade: smooth, but not slow like the default 0.7 s.
-        enterTransition = { fadeIn(tween(150)) },
-        exitTransition = { fadeOut(tween(120)) },
-        popEnterTransition = { fadeIn(tween(150)) },
-        popExitTransition = { fadeOut(tween(120)) },
+        // Opening a page slides it in a little from the right; going back slides it away again.
+        // Tabs (Home, Subscriptions, You) just fade. Every page has its own background, so two
+        // pages never show through each other mid-animation.
+        enterTransition = {
+            if (targetState.destination.route in tabs) fadeIn(tween(160))
+            else slideInHorizontally(tween(240, easing = FastOutSlowInEasing)) { it / 6 } + fadeIn(tween(200))
+        },
+        exitTransition = { fadeOut(tween(160)) },
+        popEnterTransition = { fadeIn(tween(200)) },
+        popExitTransition = {
+            if (initialState.destination.route in tabs) fadeOut(tween(160))
+            else slideOutHorizontally(tween(220, easing = FastOutSlowInEasing)) { it / 6 } + fadeOut(tween(200))
+        },
     ) {
-        composable("home") { HomeScreen(nav, pad) }
-        composable("subs") { SubscriptionsScreen(nav, pad) }
-        composable("library") { LibraryScreen(nav, pad) }
-        composable("search") { SearchScreen(nav, pad) }
-        composable("settings") { SettingsScreen(nav, pad) }
-        composable("history") { HistoryScreen(nav, pad) }
-        composable("liked") { LikedScreen(nav, pad) }
-        composable("interests") { InterestsScreen(nav, pad) }
-        composable("equalizer") { EqualizerScreen(nav, pad) }
-        composable("downloads") { DownloadsScreen(nav, onPlayed = { state.watchExpanded = true }, pad) }
-        composable("playlist/{id}") { entry -> LocalPlaylistScreen(entry.arg("id"), nav, pad) }
-        composable("ytplaylist/{url}") { entry ->
+        page("home") { HomeScreen(nav, pad) }
+        page("subs") { SubscriptionsScreen(nav, pad) }
+        page("library") { LibraryScreen(nav, pad) }
+        page("search") { SearchScreen(nav, pad) }
+        page("settings") { SettingsScreen(nav, pad) }
+        page("history") { HistoryScreen(nav, pad) }
+        page("liked") { LikedScreen(nav, pad) }
+        page("interests") { InterestsScreen(nav, pad) }
+        page("downloads") { DownloadsScreen(nav, onPlayed = { state.watchExpanded = true }, pad) }
+        page("playlist/{id}") { entry -> LocalPlaylistScreen(entry.arg("id"), nav, pad) }
+        page("ytplaylist/{url}") { entry ->
             YouTubePlaylistScreen(entry.arg("url").decodeURLPart(), nav, pad)
         }
-        composable("channel/{url}", arguments = listOf(navArgument("url") { type = NavType.StringType })) { entry ->
+        page("channel/{url}", arguments = listOf(navArgument("url") { type = NavType.StringType })) { entry ->
             ChannelScreen(entry.arg("url").decodeURLPart(), nav, pad)
         }
     }

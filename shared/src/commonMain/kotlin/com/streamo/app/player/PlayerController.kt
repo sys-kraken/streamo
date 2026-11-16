@@ -63,7 +63,21 @@ interface PlayerController {
 
     /** Show caption track [index] of [NowPlaying.captions], or none. */
     fun setCaption(index: Int?) {}
+
+    /** The CC button: captions off, or on in the phone's language when there are some. */
+    fun toggleCaptions() {}
+
+    /** The caption lines showing right now ("" when none), already cleaned up for display. */
+    val captionText: StateFlow<String> get() = NoCaptions
+
+    fun positionMs(): Long = 0
+    fun durationMs(): Long = 0
+    fun bufferedMs(): Long = 0
+    fun next() {}
+    fun previous() {}
 }
+
+private val NoCaptions: StateFlow<String> = kotlinx.coroutines.flow.MutableStateFlow("")
 
 /** The screens' handle on the player. */
 val PlayerConnection: PlayerController get() = Platform.player

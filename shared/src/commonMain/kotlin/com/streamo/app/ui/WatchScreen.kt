@@ -81,7 +81,7 @@ import com.streamo.app.player.PlayQueue
 import com.streamo.app.player.PlayerConnection
 import kotlinx.coroutines.delay
 
-/** The video surface with YouTube-style controls (seek bar, play/pause, fullscreen). */
+/** The video with Streamo's own controls, captions and audio-only cover on top. */
 @Composable
 fun PlayerSurface(
     modifier: Modifier,
@@ -89,18 +89,24 @@ fun PlayerSurface(
     fullscreen: Boolean = false,
     onFullscreen: (() -> Unit)? = null,
     onSettings: (() -> Unit)? = null,
+    onCollapse: (() -> Unit)? = null,
 ) {
     val now by PlayerConnection.nowPlaying.collectAsState()
+    var controlsVisible by remember { mutableStateOf(true) }
     Box(modifier.background(Color.Black), contentAlignment = Alignment.Center) {
-        Platform.ui.VideoView(Modifier.fillMaxSize(), controls, fullscreen, onFullscreen, onSettings)
+        // The platform draws only the picture; everything on top is shared.
+        Platform.ui.VideoView(Modifier.fillMaxSize(), false, fullscreen, null, null)
         val state = now
+        if (state != null && state.audioOnly && state.error == null) AudioOnlyCover(state, full = controls)
         if (state?.error != null) {
             Column(
                 Modifier.fillMaxSize().background(Color(0xCC000000)).clickable { PlayerConnection.retry() },
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
-            ) { Text(state.error, color = Color.White) }
-        } else if (state != null && !state.started) {
+            ) { Text(state.error, color = Color.White, modifier = Modifier.padding(24.dp)) }
+            return@Box
+        }
+        if (state != null && !state.started && !state.audioOnly) {
             // Until the new video starts, show its thumbnail instead of the last frame of the old one.
             coil3.compose.AsyncImage(
                 model = state.video.thumbnail,
@@ -110,35 +116,17 @@ fun PlayerSurface(
             )
             Box(Modifier.fillMaxSize().background(Color(0x55000000)))
             if (controls) CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
-        } else if (state != null && state.isBuffering && !state.isPlaying && controls) {
-            CircularProgressIndicator(color = Color.White, strokeWidth = 3.dp, modifier = Modifier.size(44.dp))
         }
-        // SponsorBlock: "Skip sponsor" for segments set to Ask, "Jump to highlight" near the start.
-        val prompt by SponsorState.prompt.collectAsState()
-        val p = prompt
-        if (controls && p != null && state?.error == null) {
-            val name = com.streamo.app.data.SponsorBlock.NAMES[p.category] ?: "segment"
-            Row(
-                Modifier.align(Alignment.BottomEnd).padding(end = 12.dp, bottom = 56.dp)
-                    .background(Color(0xE6FFFFFF), RoundedCornerShape(50))
-                    .clickable { PlayerConnection.seekTo(if (p.isHighlight) p.startMs else p.endMs); SponsorState.setPrompt(null) }
-                    .padding(horizontal = 14.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Text(if (p.isHighlight) "Jump to highlight" else "Skip ${name.lowercase()}", color = Color.Black,
-                    style = MaterialTheme.typography.labelLarge)
-                Spacer(Modifier.width(4.dp))
-                Icon(Icons.Default.SkipNext, null, Modifier.size(18.dp), tint = Color.Black)
-            }
+        CaptionsLayer(fullscreen, controls && controlsVisible)
+        if (controls && state != null) {
+            PlayerControls(
+                now = state, fullscreen = fullscreen,
+                onFullscreen = onFullscreen, onSettings = onSettings, onCollapse = onCollapse,
+                controlsVisible = controlsVisible, onVisibleChange = { controlsVisible = it },
+            )
+            if (state.audioOnly) ShowVideoButton()
         }
     }
-}
-
-/** "Off", "12 min left" or "End of video", for the sleep timer row. */
-private fun sleepLabel(now: NowPlaying): String = when {
-    now.sleepAtEnd -> "End of video"
-    now.sleepAtMs != null -> "${((now.sleepAtMs - com.streamo.app.nowMillis()) / 60_000 + 1).coerceAtLeast(1)} min left"
-    else -> "Off"
 }
 
 @Composable
@@ -155,7 +143,7 @@ fun WatchScreen(
     if (fullscreen) {
         PlayerSurface(
             Modifier.fillMaxSize(), controls = true, fullscreen = true,
-            onFullscreen = onToggleFullscreen, onSettings = { showSettings = true },
+            onFullscreen = onToggleFullscreen, onSettings = { showSettings = true }, onCollapse = onCollapse,
         )
         return
     }
@@ -204,10 +192,8 @@ fun WatchScreen(
                 controls = true,
                 onFullscreen = onToggleFullscreen,
                 onSettings = { showSettings = true },
+                onCollapse = onCollapse,
             )
-            IconButton(onClick = onCollapse, modifier = Modifier.align(Alignment.TopStart)) {
-                Icon(Icons.Default.KeyboardArrowDown, "Minimize", tint = Color.White)
-            }
         }
 
         LazyColumn(Modifier.fillMaxSize()) {
@@ -340,106 +326,6 @@ private fun ActionRow(now: NowPlaying, details: Loader<com.streamo.app.data.Vide
         Pill(Icons.AutoMirrored.Filled.PlaylistAdd, "Save") { saving = true }
         Pill(Icons.Default.Download, "Download") { downloading = true }
         Pill(Icons.Default.PictureInPictureAlt, "Pop-up", onClick = onPip)
-    }
-}
-
-/** YouTube-style settings sheet opened from the gear on the video. */
-@kotlin.OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun PlayerSettingsSheet(now: NowPlaying, onDismiss: () -> Unit) {
-    var page by remember { mutableStateOf("main") }
-    ModalBottomSheet(onDismissRequest = onDismiss) {
-        Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
-            when (page) {
-                "main" -> {
-                    SheetRow(Icons.Default.HighQuality, "Quality", if (now.height > 0) "${now.height}p" else "Auto") { page = "quality" }
-                    SheetRow(Icons.Default.Speed, "Playback speed", if (now.speed == 1f) "Normal" else "${now.speed}x") { page = "speed" }
-                    SheetRow(Icons.Default.Headphones, "Audio only", if (now.audioOnly) "On" else "Off") {
-                        PlayerConnection.setAudioOnly(!now.audioOnly); onDismiss()
-                    }
-                    SheetRow(Icons.Default.Bedtime, "Sleep timer", sleepLabel(now)) { page = "sleep" }
-                    SheetRow(
-                        Icons.Default.ClosedCaption, "Captions",
-                        now.captionIndex?.let { now.captions.getOrNull(it) } ?: if (now.captions.isEmpty()) "None" else "Off",
-                    ) { page = "captions" }
-                }
-                "captions" -> {
-                    SheetTitle("Captions") { page = "main" }
-                    if (now.captions.isEmpty()) {
-                        Text("No captions for this video right now. YouTube sometimes holds them back; try again later.", Modifier.padding(20.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    } else {
-                        SheetChoice("Off", now.captionIndex == null) { PlayerConnection.setCaption(null); onDismiss() }
-                        now.captions.forEachIndexed { i, label ->
-                            SheetChoice(label, now.captionIndex == i) { PlayerConnection.setCaption(i); onDismiss() }
-                        }
-                    }
-                    val settings by LibraryStore.settings.collectAsState()
-                    Text("Text size", Modifier.padding(start = 20.dp, top = 12.dp, bottom = 8.dp), style = MaterialTheme.typography.labelLarge)
-                    Row(Modifier.padding(horizontal = 20.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                        listOf("small" to "Small", "normal" to "Normal", "large" to "Large").forEach { (value, label) ->
-                            Chip(label, settings.captionSize == value) { LibraryStore.updateSettings { it.copy(captionSize = value) } }
-                        }
-                    }
-                }
-                "sleep" -> {
-                    SheetTitle("Sleep timer") { page = "main" }
-                    SheetChoice("Off", now.sleepAtMs == null && !now.sleepAtEnd) { PlayerConnection.setSleepTimer(null); onDismiss() }
-                    listOf(5, 10, 15, 30, 45, 60, 90).forEach { m ->
-                        SheetChoice(if (m < 60) "$m minutes" else if (m == 60) "1 hour" else "1 hour 30 minutes", false) {
-                            PlayerConnection.setSleepTimer(m); onDismiss()
-                            Platform.ui.toast("Playback will stop in ${if (m < 60) "$m minutes" else if (m == 60) "1 hour" else "1.5 hours"}.")
-                        }
-                    }
-                    SheetChoice("End of this video", now.sleepAtEnd) { PlayerConnection.setSleepTimer(null, endOfVideo = true); onDismiss() }
-                }
-                "quality" -> {
-                    SheetTitle("Quality") { page = "main" }
-                    if (now.heights.isEmpty()) Text("Only one quality is available for this video.", Modifier.padding(20.dp))
-                    now.heights.forEach { h ->
-                        val tag = when { h >= 2160 -> " 4K"; h >= 720 -> " HD"; else -> "" }
-                        SheetChoice("${h}p$tag", h == now.height) { PlayerConnection.setQuality(h); onDismiss() }
-                    }
-                }
-                "speed" -> {
-                    SheetTitle("Playback speed") { page = "main" }
-                    listOf(0.5f, 0.75f, 1f, 1.25f, 1.5f, 1.75f, 2f).forEach { sp ->
-                        SheetChoice(if (sp == 1f) "Normal" else "${sp}x", sp == now.speed) { PlayerConnection.setSpeed(sp); onDismiss() }
-                    }
-                }
-            }
-        }
-    }
-}
-
-@Composable
-private fun SheetRow(icon: androidx.compose.ui.graphics.vector.ImageVector, title: String, value: String, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, null)
-        Spacer(Modifier.width(20.dp))
-        Text(title, Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge)
-        Text(value, color = MaterialTheme.colorScheme.onSurfaceVariant)
-    }
-}
-
-@Composable
-private fun SheetTitle(title: String, onBack: () -> Unit) {
-    Row(Modifier.fillMaxWidth().padding(horizontal = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-        IconButton(onClick = onBack) { Icon(Icons.AutoMirrored.Filled.ArrowBack, "Back") }
-        Text(title, style = MaterialTheme.typography.titleMedium)
-    }
-}
-
-@Composable
-private fun SheetChoice(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().clickable(onClick = onClick).padding(horizontal = 20.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.width(44.dp)) { if (selected) Icon(Icons.Default.Check, null) }
-        Text(label, style = MaterialTheme.typography.bodyLarge)
     }
 }
 

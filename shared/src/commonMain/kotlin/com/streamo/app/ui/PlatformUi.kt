@@ -28,4 +28,12 @@ interface PlatformUi {
     /** Runs the action given to it once saving downloads is allowed (old Android versions ask first). */
     @Composable
     fun rememberDownloadPermission(): (() -> Unit) -> Unit
+
+    /** Screen brightness for the swipe gesture, 0..1 (-1 when the platform can't tell). */
+    fun brightness(): Float = -1f
+    fun setBrightness(value: Float) {}
+
+    /** Media volume for the swipe gesture, 0..1. */
+    fun volume(): Float = -1f
+    fun setVolume(value: Float) {}
 }

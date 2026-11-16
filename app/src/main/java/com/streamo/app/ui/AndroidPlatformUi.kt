@@ -20,15 +20,12 @@ import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.util.UnstableApi
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
-import coil3.asDrawable
+import kotlin.math.roundToInt
 import com.streamo.app.data.LibraryStore
 import com.streamo.app.player.AndroidPlayer
 import com.streamo.app.player.SponsorState
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.setValue
-
-/** The extra pieces Streamo adds to each PlayerView. */
-private class ViewParts(val gestures: PlayerGestures, val cover: AudioOnlyCover)
 
 /** Android's [PlatformUi]: Media3's PlayerView, the share sheet, toasts and the APK updater. */
 class AndroidPlatformUi(context: Context) : PlatformUi {
@@ -45,81 +42,21 @@ class AndroidPlatformUi(context: Context) : PlatformUi {
     ) {
         val player by AndroidPlayer.player.collectAsState()
         val now by AndroidPlayer.nowPlaying.collectAsState()
-        val settingsClick by rememberUpdatedState(onSettings)
-        val segments by SponsorState.segments.collectAsState()
-        val settings by LibraryStore.settings.collectAsState()
-        val audioOnly = now?.audioOnly == true
-        val thumbnail = now?.video?.thumbnail
-        // Audio only: show the video's picture instead of a black box.
-        var cover by remember { mutableStateOf<android.graphics.drawable.Drawable?>(null) }
-        LaunchedEffect(audioOnly, thumbnail) {
-            cover = if (!audioOnly || thumbnail == null) null else runCatching<android.graphics.drawable.Drawable?> {
-                val loader = coil3.SingletonImageLoader.get(context)
-                val result = loader.execute(coil3.request.ImageRequest.Builder(context).data(thumbnail).build())
-                result.image?.asDrawable(context.resources)
-            }.getOrNull()
-        }
         AndroidView(
             factory = { ctx ->
                 PlayerView(ctx).apply {
-                    setShowNextButton(true)
-                    setShowPreviousButton(true)
-                    setShowShuffleButton(false)
-                    setShowSubtitleButton(true)
+                    // Streamo draws its own controls and captions on top (shared PlayerControls).
+                    useController = false
+                    subtitleView?.visibility = android.view.View.GONE
+                    artworkDisplayMode = PlayerView.ARTWORK_DISPLAY_MODE_OFF
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     setBackgroundColor(android.graphics.Color.BLACK)
-                    // The gear opens Streamo's own menu (quality + speed) instead of the default one.
-                    findViewById<android.view.View>(androidx.media3.ui.R.id.exo_settings)
-                        ?.setOnClickListener { settingsClick?.invoke() }
-                    // CC turns captions on and off in one tap (language and size are in the gear menu).
-                    findViewById<android.view.View>(androidx.media3.ui.R.id.exo_subtitle)
-                        ?.setOnClickListener { AndroidPlayer.toggleCaptions() }
-                    // White seek bar, matching the black-and-white look.
-                    findViewById<androidx.media3.ui.DefaultTimeBar>(androidx.media3.ui.R.id.exo_progress)?.apply {
-                        setPlayedColor(android.graphics.Color.WHITE)
-                        setScrubberColor(android.graphics.Color.WHITE)
-                        setBufferedColor(0x73FFFFFF)
-                        setUnplayedColor(0x33FFFFFF)
-                        // SponsorBlock segments show as grey marks.
-                        setAdMarkerColor(0xFFAAAAAA.toInt())
-                        setPlayedAdMarkerColor(0x88FFFFFF.toInt())
-                    }
-                    // Audio-only picture: in the overlay layer, under the controls.
-                    val cover = AudioOnlyCover(ctx)
-                    overlayFrameLayout?.addView(cover, 0, android.widget.FrameLayout.LayoutParams(-1, -1))
-                    val gestures = PlayerGestures(this)
-                    tag = ViewParts(gestures, cover)
-                    setOnTouchListener { _, e -> gestures.onTouch(e) }
+                    setShutterBackgroundColor(android.graphics.Color.BLACK)
                 }
             },
             update = { view ->
                 view.player = player
-                view.useController = controls
-                val parts = view.tag as? ViewParts
-                parts?.gestures?.fullscreen = fullscreen
-                parts?.cover?.update(audioOnly, cover, full = controls)
-                // Where SponsorBlock segments start, marked on the seek bar.
-                val marks = segments.map { it.startMs }.toLongArray()
-                view.setExtraAdGroupMarkers(marks, BooleanArray(marks.size))
-                view.artworkDisplayMode = PlayerView.ARTWORK_DISPLAY_MODE_OFF
-                view.subtitleView?.apply {
-                    setApplyEmbeddedStyles(false)
-                    setApplyEmbeddedFontSizes(false)
-                    setFractionalTextSize(
-                        androidx.media3.ui.SubtitleView.DEFAULT_TEXT_SIZE_FRACTION * when (settings.captionSize) {
-                            "small" -> 0.8f; "large" -> 1.35f; else -> 1f
-                        },
-                    )
-                    setStyle(
-                        androidx.media3.ui.CaptionStyleCompat(
-                            android.graphics.Color.WHITE, 0xB3000000.toInt(), android.graphics.Color.TRANSPARENT,
-                            androidx.media3.ui.CaptionStyleCompat.EDGE_TYPE_NONE, android.graphics.Color.BLACK, null,
-                        ),
-                    )
-                }
                 view.keepScreenOn = now?.isPlaying == true // screen stays on while watching
-                view.setFullscreenButtonState(fullscreen)
-                if (onFullscreen != null) view.setFullscreenButtonClickListener { onFullscreen() }
             },
             onRelease = { it.player = null },
             modifier = modifier,
@@ -139,6 +76,37 @@ class AndroidPlatformUi(context: Context) : PlatformUi {
 
     override fun toast(message: String, long: Boolean) {
         Toast.makeText(context, message, if (long) Toast.LENGTH_LONG else Toast.LENGTH_SHORT).show()
+    }
+
+    override fun brightness(): Float {
+        val window = currentActivity?.get()?.window ?: return -1f
+        val b = window.attributes.screenBrightness
+        if (b >= 0) return b
+        return runCatching {
+            android.provider.Settings.System.getInt(context.contentResolver, android.provider.Settings.System.SCREEN_BRIGHTNESS) / 255f
+        }.getOrDefault(0.5f)
+    }
+
+    override fun setBrightness(value: Float) {
+        val window = currentActivity?.get()?.window ?: return
+        window.attributes = window.attributes.apply { screenBrightness = value.coerceIn(0.01f, 1f) }
+    }
+
+    private val audio get() = context.getSystemService(Context.AUDIO_SERVICE) as android.media.AudioManager
+
+    override fun volume(): Float {
+        val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        return audio.getStreamVolume(android.media.AudioManager.STREAM_MUSIC).toFloat() / max
+    }
+
+    override fun setVolume(value: Float) {
+        val max = audio.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+        audio.setStreamVolume(android.media.AudioManager.STREAM_MUSIC, (value * max).roundToInt(), 0)
+    }
+
+    companion object {
+        /** The activity on screen, for screen brightness. Set by MainActivity. */
+        var currentActivity: java.lang.ref.WeakReference<android.app.Activity>? = null
     }
 
     @Composable

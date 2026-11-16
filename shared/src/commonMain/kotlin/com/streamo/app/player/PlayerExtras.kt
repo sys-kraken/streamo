@@ -67,3 +67,15 @@ object EqPresets {
     /** True when the preset's gains are all (nearly) zero. */
     fun isFlat(gains: List<Float>) = gains.all { abs(it) < 0.05f }
 }
+
+/**
+ * YouTube's automatic captions repeat each line in the next cue (they "roll up"), which shows the
+ * same words twice. Keeps each line once, and at most the last two lines.
+ */
+fun cleanCaptionLines(texts: List<String>): String =
+    texts.flatMap { it.split('\n') }
+        .map { it.trim() }
+        .filter { it.isNotEmpty() }
+        .distinct()
+        .takeLast(2)
+        .joinToString("\n")
